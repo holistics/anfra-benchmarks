@@ -1,0 +1,59 @@
+Model bench_sample {
+  type: 'query'
+  label: 'bench_wide, first rows'
+  description: 'The first 20 rows of the benchmark table bench_wide, as psql wrote them (../cases/bench_wide_head.csv). Every case scans bench_wide with LIMIT and no ORDER BY, which returns these rows first. Values are kept as text, exactly as written.'
+  data_source_name: 'results'
+  query: @sql SELECT * FROM read_csv('../cases/bench_wide_head.csv', header = true, all_varchar = true) ;;
+
+  dimension id { label: 'id (bigint)' type: 'number' primary_key: true definition: @sql CAST({{ #SOURCE.id }} AS BIGINT);; }
+  dimension i1 { label: 'i1 (integer)' type: 'text' definition: @sql {{ #SOURCE.i1 }};; }
+  dimension b1 { label: 'b1 (bigint)' type: 'text' definition: @sql {{ #SOURCE.b1 }};; }
+  dimension n1 { label: 'n1 (numeric)' type: 'text' definition: @sql {{ #SOURCE.n1 }};; }
+  dimension f1 { label: 'f1 (double)' type: 'text' definition: @sql {{ #SOURCE.f1 }};; }
+  dimension s1 { label: 's1 (short text)' type: 'text' definition: @sql {{ #SOURCE.s1 }};; }
+  dimension l1 { label: 'l1 (long text)' type: 'text' definition: @sql {{ #SOURCE.l1 }};; }
+  dimension d1 { label: 'd1 (date)' type: 'text' definition: @sql {{ #SOURCE.d1 }};; }
+  dimension t1 { label: 't1 (timestamp)' type: 'text' definition: @sql {{ #SOURCE.t1 }};; }
+  dimension z1 { label: 'z1 (timestamptz)' type: 'text' definition: @sql {{ #SOURCE.z1 }};; }
+  dimension x1 { label: 'x1 (boolean)' type: 'text' definition: @sql {{ #SOURCE.x1 }};; }
+  dimension i2 { label: 'i2 (integer)' type: 'text' definition: @sql {{ #SOURCE.i2 }};; }
+  dimension b2 { label: 'b2 (bigint)' type: 'text' definition: @sql {{ #SOURCE.b2 }};; }
+  dimension n2 { label: 'n2 (numeric)' type: 'text' definition: @sql {{ #SOURCE.n2 }};; }
+  dimension f2 { label: 'f2 (double)' type: 'text' definition: @sql {{ #SOURCE.f2 }};; }
+  dimension s2 { label: 's2 (short text)' type: 'text' definition: @sql {{ #SOURCE.s2 }};; }
+  dimension l2 { label: 'l2 (long text)' type: 'text' definition: @sql {{ #SOURCE.l2 }};; }
+  dimension d2 { label: 'd2 (date)' type: 'text' definition: @sql {{ #SOURCE.d2 }};; }
+  dimension t2 { label: 't2 (timestamp)' type: 'text' definition: @sql {{ #SOURCE.t2 }};; }
+  dimension z2 { label: 'z2 (timestamptz)' type: 'text' definition: @sql {{ #SOURCE.z2 }};; }
+  dimension x2 { label: 'x2 (boolean)' type: 'text' definition: @sql {{ #SOURCE.x2 }};; }
+  dimension i3 { label: 'i3 (integer)' type: 'text' definition: @sql {{ #SOURCE.i3 }};; }
+  dimension b3 { label: 'b3 (bigint)' type: 'text' definition: @sql {{ #SOURCE.b3 }};; }
+  dimension n3 { label: 'n3 (numeric)' type: 'text' definition: @sql {{ #SOURCE.n3 }};; }
+  dimension f3 { label: 'f3 (double)' type: 'text' definition: @sql {{ #SOURCE.f3 }};; }
+  dimension s3 { label: 's3 (short text)' type: 'text' definition: @sql {{ #SOURCE.s3 }};; }
+  dimension l3 { label: 'l3 (long text)' type: 'text' definition: @sql {{ #SOURCE.l3 }};; }
+  dimension d3 { label: 'd3 (date)' type: 'text' definition: @sql {{ #SOURCE.d3 }};; }
+  dimension t3 { label: 't3 (timestamp)' type: 'text' definition: @sql {{ #SOURCE.t3 }};; }
+  dimension z3 { label: 'z3 (timestamptz)' type: 'text' definition: @sql {{ #SOURCE.z3 }};; }
+  dimension x3 { label: 'x3 (boolean)' type: 'text' definition: @sql {{ #SOURCE.x3 }};; }
+  dimension i4 { label: 'i4 (integer)' type: 'text' definition: @sql {{ #SOURCE.i4 }};; }
+  dimension b4 { label: 'b4 (bigint)' type: 'text' definition: @sql {{ #SOURCE.b4 }};; }
+  dimension n4 { label: 'n4 (numeric)' type: 'text' definition: @sql {{ #SOURCE.n4 }};; }
+  dimension f4 { label: 'f4 (double)' type: 'text' definition: @sql {{ #SOURCE.f4 }};; }
+  dimension s4 { label: 's4 (short text)' type: 'text' definition: @sql {{ #SOURCE.s4 }};; }
+  dimension l4 { label: 'l4 (long text)' type: 'text' definition: @sql {{ #SOURCE.l4 }};; }
+  dimension d4 { label: 'd4 (date)' type: 'text' definition: @sql {{ #SOURCE.d4 }};; }
+  dimension t4 { label: 't4 (timestamp)' type: 'text' definition: @sql {{ #SOURCE.t4 }};; }
+  dimension z4 { label: 'z4 (timestamptz)' type: 'text' definition: @sql {{ #SOURCE.z4 }};; }
+  dimension x4 { label: 'x4 (boolean)' type: 'text' definition: @sql {{ #SOURCE.x4 }};; }
+  dimension i5 { label: 'i5 (integer)' type: 'text' definition: @sql {{ #SOURCE.i5 }};; }
+  dimension b5 { label: 'b5 (bigint)' type: 'text' definition: @sql {{ #SOURCE.b5 }};; }
+  dimension n5 { label: 'n5 (numeric)' type: 'text' definition: @sql {{ #SOURCE.n5 }};; }
+  dimension f5 { label: 'f5 (double)' type: 'text' definition: @sql {{ #SOURCE.f5 }};; }
+  dimension s5 { label: 's5 (short text)' type: 'text' definition: @sql {{ #SOURCE.s5 }};; }
+  dimension l5 { label: 'l5 (long text)' type: 'text' definition: @sql {{ #SOURCE.l5 }};; }
+  dimension d5 { label: 'd5 (date)' type: 'text' definition: @sql {{ #SOURCE.d5 }};; }
+  dimension t5 { label: 't5 (timestamp)' type: 'text' definition: @sql {{ #SOURCE.t5 }};; }
+  dimension z5 { label: 'z5 (timestamptz)' type: 'text' definition: @sql {{ #SOURCE.z5 }};; }
+  dimension x5 { label: 'x5 (boolean)' type: 'text' definition: @sql {{ #SOURCE.x5 }};; }
+}

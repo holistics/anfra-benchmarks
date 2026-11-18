@@ -1,0 +1,6 @@
+# The benchmark's results, read straight from ../results/*.jsonl by an in-memory DuckDB.
+data_sources:
+  results:
+    type: duckdb
+    connection:
+      path: ":memory:"

@@ -1,0 +1,9 @@
+{"order":1,"name":"select1","sql":"SELECT 1 AS one","rows":1,"cols":1,"columns":["one"]}
+{"order":2,"name":"narrow_1","sql":"SELECT id, s1, n1 FROM bench_wide LIMIT 1","rows":1,"cols":3,"columns":["id","s1","n1"]}
+{"order":3,"name":"narrow_1k","sql":"SELECT id, s1, n1 FROM bench_wide LIMIT 1000","rows":1000,"cols":3,"columns":["id","s1","n1"]}
+{"order":4,"name":"narrow_100k","sql":"SELECT id, s1, n1 FROM bench_wide LIMIT 100000","rows":100000,"cols":3,"columns":["id","s1","n1"]}
+{"order":5,"name":"narrow_1m","sql":"SELECT id, s1, n1 FROM bench_wide LIMIT 1000000","rows":1000000,"cols":3,"columns":["id","s1","n1"]}
+{"order":6,"name":"medium_100k","sql":"SELECT i1, b1, n1, f1, s1, l1, d1, t1, z1, x1 FROM bench_wide LIMIT 100000","rows":100000,"cols":10,"columns":["i1","b1","n1","f1","s1","l1","d1","t1","z1","x1"]}
+{"order":7,"name":"wide_1","sql":"SELECT i1, b1, n1, f1, s1, l1, d1, t1, z1, x1, i2, b2, n2, f2, s2, l2, d2, t2, z2, x2, i3, b3, n3, f3, s3, l3, d3, t3, z3, x3 FROM bench_wide LIMIT 1","rows":1,"cols":30,"columns":["i1","b1","n1","f1","s1","l1","d1","t1","z1","x1","i2","b2","n2","f2","s2","l2","d2","t2","z2","x2","i3","b3","n3","f3","s3","l3","d3","t3","z3","x3"]}
+{"order":8,"name":"wide_1k","sql":"SELECT i1, b1, n1, f1, s1, l1, d1, t1, z1, x1, i2, b2, n2, f2, s2, l2, d2, t2, z2, x2, i3, b3, n3, f3, s3, l3, d3, t3, z3, x3 FROM bench_wide LIMIT 1000","rows":1000,"cols":30,"columns":["i1","b1","n1","f1","s1","l1","d1","t1","z1","x1","i2","b2","n2","f2","s2","l2","d2","t2","z2","x2","i3","b3","n3","f3","s3","l3","d3","t3","z3","x3"]}
+{"order":9,"name":"wide_100k","sql":"SELECT i1, b1, n1, f1, s1, l1, d1, t1, z1, x1, i2, b2, n2, f2, s2, l2, d2, t2, z2, x2, i3, b3, n3, f3, s3, l3, d3, t3, z3, x3 FROM bench_wide LIMIT 100000","rows":100000,"cols":30,"columns":["i1","b1","n1","f1","s1","l1","d1","t1","z1","x1","i2","b2","n2","f2","s2","l2","d2","t2","z2","x2","i3","b3","n3","f3","s3","l3","d3","t3","z3","x3"]}

@@ -1,0 +1,17 @@
+Model cases {
+  type: 'query'
+  label: 'Benchmark cases'
+  description: 'The SQL group\'s cases, as the runner defines them (../cases/cases.jsonl, from `runner cases`): the query every tool runs, and the rows and columns its result must have.'
+  data_source_name: 'results'
+  query: @sql
+    SELECT "order" AS case_order, name, sql, rows, cols, array_to_string(columns, ', ') AS columns
+    FROM read_json_auto('../cases/cases.jsonl')
+  ;;
+
+  dimension name { label: 'Case' type: 'text' primary_key: true definition: @sql {{ #SOURCE.name }};; }
+  dimension case_order { label: 'Case order' type: 'number' hidden: true definition: @sql {{ #SOURCE.case_order }};; }
+  dimension sql { label: 'SQL' type: 'text' definition: @sql {{ #SOURCE.sql }};; }
+  dimension rows { label: 'Rows' type: 'number' definition: @sql {{ #SOURCE.rows }};; }
+  dimension cols { label: 'Columns' type: 'number' definition: @sql {{ #SOURCE.cols }};; }
+  dimension columns { label: 'Column names' type: 'text' description: 'The result\'s columns, in order, comma-separated.' definition: @sql {{ #SOURCE.columns }};; }
+}

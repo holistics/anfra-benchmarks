@@ -1,0 +1,4 @@
+# Built tools (usql, the runner)
+.bin/
+# Per-run logs
+results/**/*.log

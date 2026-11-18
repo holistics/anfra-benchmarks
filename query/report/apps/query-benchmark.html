@@ -1,0 +1,1053 @@
+<!doctype html>
+<!--
+  Query benchmark: each tool's time per case, for one machine, batch and warehouse.
+
+  Two layers:
+  - Design layer: the Basecoat links, the <style> block (anfra tokens), the markup, chartTheme().
+  - SDK wiring: everything in the last <script> that touches `app`, a query or a filter.
+-->
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Query benchmark</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fontsource-variable/inter@5.2.5/index.css"
+    integrity="sha384-ZTIcl2CmY0wyM9ANOhomBco7rEUIlWztf6lGcLKCocKUrIgGCsfisuZyE+hadW8K" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/basecoat-css@1.0.2/dist/basecoat.cdn.min.css"
+    integrity="sha384-XWKdrxzE2X33lI8Q03C9fIbqdLWV11whVNycR2/3bMNJY73EEQOa7rmN+SeiSCor" crossorigin="anonymous">
+  <script src="https://cdn.jsdelivr.net/npm/basecoat-css@1.0.2/dist/js/all.min.js"
+    integrity="sha384-rD2ZCuReXV7nIneJcn1lsTn6yOv87YARLQyUsemVAxrYYHdy5hcAW8XZEQxx87Dj" crossorigin="anonymous" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/echarts@6.1.0/dist/echarts.min.js"
+    integrity="sha384-C2iskrW/uPW46KzOjrvJIQo4YkV8lkD+QS0CrDN18IIPIpT/g2USu8bTP3nvmIAD" crossorigin="anonymous"></script>
+  <style>
+    :root {
+      --background: oklch(0.955 0.007 88.6);
+      --foreground: oklch(0.201 0.022 301.1);
+      --card: oklch(1 0 0);
+      --card-foreground: oklch(0.201 0.022 301.1);
+      --popover: oklch(1 0 0);
+      --popover-foreground: oklch(0.201 0.022 301.1);
+      --primary: oklch(0.565 0.194 300.3);
+      --primary-foreground: oklch(1 0 0);
+      --secondary: oklch(0.973 0.005 95.1);
+      --secondary-foreground: oklch(0.392 0.021 304.3);
+      --muted: oklch(0.973 0.005 95.1);
+      --muted-foreground: oklch(0.485 0.022 306.3);
+      --accent: oklch(0.946 0.027 304.8);
+      --accent-foreground: oklch(0.201 0.022 301.1);
+      --border: oklch(0.201 0.022 301.1 / 0.12);
+      --input: oklch(0.201 0.022 301.1 / 0.22);
+      --ring: oklch(0.565 0.194 300.3);
+      --radius: 0.625rem;
+      --chart-text: #5b5560;
+      --chart-grid: #e7e4e0;
+      --chart-cat-1: #7c4dce; --chart-cat-2: #1f9aa6; --chart-cat-3: #d9972b; --chart-cat-4: #d4527a;
+      --chart-cat-5: #3d7bd9; --chart-cat-6: #3f9d6b; --chart-cat-7: #dd7a3c; --chart-cat-8: #7d7785;
+    }
+    .dark {
+      --background: oklch(0.17 0.015 301);
+      --foreground: oklch(0.961 0.007 304.2);
+      --card: oklch(0.215 0.017 301);
+      --card-foreground: oklch(0.961 0.007 304.2);
+      --popover: oklch(0.245 0.018 301);
+      --popover-foreground: oklch(0.961 0.007 304.2);
+      --primary: oklch(0.7 0.16 300);
+      --primary-foreground: oklch(0.17 0.015 301);
+      --secondary: oklch(0.26 0.018 301);
+      --secondary-foreground: oklch(0.86 0.01 304);
+      --muted: oklch(0.26 0.018 301);
+      --muted-foreground: oklch(0.72 0.02 304);
+      --accent: oklch(0.32 0.05 301);
+      --accent-foreground: oklch(0.961 0.007 304.2);
+      --border: oklch(1 0 0 / 0.1);
+      --input: oklch(1 0 0 / 0.16);
+      --ring: oklch(0.7 0.16 300);
+      --chart-text: #b4aebb;
+      --chart-grid: #38333d;
+      --chart-cat-1: #a98af0; --chart-cat-2: #4cc3cf; --chart-cat-3: #f0b252; --chart-cat-4: #f07ea0;
+      --chart-cat-5: #7aa8f2; --chart-cat-6: #6cc496; --chart-cat-7: #f59a63; --chart-cat-8: #a39dab;
+    }
+
+    body {
+      font: 14px/20px "Inter Variable", Inter, system-ui, sans-serif;
+      font-variant-numeric: tabular-nums;
+      background: var(--background); color: var(--foreground);
+      margin: 0; padding: 24px; max-width: 1280px; margin-inline: auto;
+    }
+    h1 { font-size: 20px; line-height: 28px; font-weight: 600; margin: 0; text-wrap: balance; }
+    .caption { font-size: 12px; line-height: 16px; color: var(--muted-foreground); }
+    .header { margin-bottom: 16px; display: flex; flex-direction: column; gap: 4px; }
+    .btn, .input { height: 32px; font-size: 14px; }
+    .card { border-radius: 14px; box-shadow: none; position: relative; margin-bottom: 16px; }
+    .card > header { padding-bottom: 0; }
+    .card h2 { font-size: 14px; line-height: 20px; font-weight: 600; }
+
+    .card.filters { flex-direction: row; flex-wrap: wrap; gap: 16px; align-items: flex-end;
+                    justify-content: flex-start; padding: 12px 16px; overflow: visible; }
+    .field-group { display: flex; flex-direction: column; gap: 8px; }
+    .field-group > label, .field-group > .label { font-weight: 500; }
+
+    .chart { height: 380px; }
+    .compare-body { display: flex; flex-direction: column; gap: 16px; }
+    .picker { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+    .picks { display: flex; flex-wrap: wrap; gap: 8px; }
+    .chip { display: inline-flex; align-items: center; gap: 4px; height: 32px; padding: 0 4px 0 12px;
+            border: 1px solid var(--border); border-radius: 999px; background: var(--secondary); }
+    .chip.baseline { border-color: var(--primary); background: var(--accent); }
+    .chip .tag { font-size: 12px; color: var(--primary); font-weight: 600; }
+    .chip .btn { height: 24px; padding: 0 8px; font-size: 12px; }
+    .status { position: absolute; inset: 56px 16px 16px; display: none; align-items: center;
+              justify-content: center; background: color-mix(in oklab, var(--card) 85%, transparent); }
+    .status.visible { display: flex; }
+    /* In a block with its own controls, the overlay covers only the data, never the controls. */
+    .data-area { position: relative; }
+    .data-area > .status { inset: 0; }
+    .status > * { width: 100%; }
+    .status .skeleton { height: 100%; border-radius: 10px; }
+    .status .empty { text-align: center; color: var(--muted-foreground); }
+
+    .table-wrap { overflow-x: auto; }
+    table.results { width: 100%; border-collapse: collapse; font-size: 14px; }
+    table.results th, table.results td { padding: 8px 12px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+    table.results th { font-weight: 500; color: var(--muted-foreground); text-align: right; }
+    table.results th:first-child, table.results td:first-child { text-align: left; }
+    table.results td { text-align: right; }
+    table.results thead tr:first-child th { font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; }
+    table.results .slowest { color: var(--muted-foreground); font-size: 12px; margin-left: 4px; }
+    table.results .failed { color: var(--destructive, #d4527a); font-size: 12px; margin-left: 4px; }
+    table.results td.case { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+    .notes { display: flex; flex-direction: column; gap: 4px; }
+
+    /* Minimum heights, sized for 9 cases and 10 preview rows, so changing a filter, a pick or a case
+       does not move the blocks below. */
+    .compare-area { min-height: 380px; }
+    .warning-line { min-height: 16px; margin: 0; color: var(--chart-cat-7); }
+    section.table-wrap { min-height: 430px; }
+    .case-facts { min-height: 104px; }
+    .preview-wrap { min-height: 380px; }
+    .run-filters { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-end; }
+    .runs-card { overflow: visible; }  /* let the filters' dropdowns overflow the card */
+    .runs-wrap { min-height: 420px; max-height: 640px; overflow: auto; }
+    .runs-wrap thead th { position: sticky; top: 0; background: var(--card); }
+    .runs-footer { display: flex; align-items: center; gap: 16px; }
+    table.results.runs td.failed-run { color: var(--chart-cat-4); }
+    .case-facts { display: flex; flex-direction: column; gap: 8px; }
+    .case-facts code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px;
+                       background: var(--secondary); border-radius: 6px; padding: 8px 12px; display: block;
+                       white-space: pre-wrap; word-break: break-word; }
+    table.results.preview td { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; text-align: left; }
+    table.results.preview th { text-align: left; }
+    table.results.preview td.null { color: var(--muted-foreground); font-style: italic; }
+  </style>
+</head>
+<body>
+  <main data-anfra-container="page" data-anfra-label="Query benchmark">
+    <div class="header">
+      <h1>Query benchmark</h1>
+      <div class="caption">How long each tool takes to run a query and deliver its whole result, on
+        one of two paths. Compare tools only within one.</div>
+      <div class="caption"><b>File:</b> CLI tools (psql, usql, anfra CLI) each write the whole result to
+        a <b>CSV file</b> with a header row, timed from start to exit.
+        <b>HTTP:</b> each tool answers the request its own frontend sends (anfra: streamed NDJSON;
+        Superset: one JSON document), timed until the answer is read and parsed.</div>
+    </div>
+
+    <div class="card filters" data-anfra-container="controls" data-anfra-label="Controls">
+      <div class="field-group" data-anfra-block="machine-picker" data-anfra-label="Machine" data-anfra-control="machine">
+        <label for="machine-input">Machine</label>
+        <div id="machine-combobox" class="combobox" style="width: 220px" data-auto-highlight="true">
+          <input id="machine-input" type="text" role="combobox" placeholder="Machine" autocomplete="off"
+                 autocorrect="off" spellcheck="false" aria-autocomplete="list" aria-expanded="false"
+                 aria-controls="machine-listbox">
+          <div data-popover aria-hidden="true">
+            <div role="listbox" id="machine-listbox" aria-orientation="vertical" data-empty="No machines."></div>
+          </div>
+          <input type="hidden" name="machine" value="">
+        </div>
+      </div>
+
+      <div class="field-group" data-anfra-block="batch-picker" data-anfra-label="Batch" data-anfra-control="batch">
+        <label for="batch-input">Batch</label>
+        <div id="batch-combobox" class="combobox" style="width: 120px" data-auto-highlight="true">
+          <input id="batch-input" type="text" role="combobox" placeholder="Batch" autocomplete="off"
+                 autocorrect="off" spellcheck="false" aria-autocomplete="list" aria-expanded="false"
+                 aria-controls="batch-listbox">
+          <div data-popover aria-hidden="true">
+            <div role="listbox" id="batch-listbox" aria-orientation="vertical" data-empty="No batches."></div>
+          </div>
+          <input type="hidden" name="batch" value="">
+        </div>
+      </div>
+
+      <div class="field-group" data-anfra-block="db-picker" data-anfra-label="Warehouse" data-anfra-control="db">
+        <label for="db-input">Warehouse</label>
+        <div id="db-combobox" class="combobox" style="width: 160px" data-auto-highlight="true">
+          <input id="db-input" type="text" role="combobox" placeholder="Warehouse" autocomplete="off"
+                 autocorrect="off" spellcheck="false" aria-autocomplete="list" aria-expanded="false"
+                 aria-controls="db-listbox">
+          <div data-popover aria-hidden="true">
+            <div role="listbox" id="db-listbox" aria-orientation="vertical" data-empty="No warehouses."></div>
+          </div>
+          <input type="hidden" name="db" value="">
+        </div>
+      </div>
+
+      <div class="field-group" data-anfra-block="path-picker" data-anfra-label="Path" data-anfra-control="path">
+        <span class="label">Path</span>
+        <div class="button-group" role="group" aria-label="Path">
+          <button class="btn" data-variant="secondary" type="button" data-path="file" aria-pressed="true">File (CLI → CSV)</button>
+          <button class="btn" data-variant="secondary" type="button" data-path="http" aria-pressed="true">HTTP (frontend)</button>
+        </div>
+      </div>
+    </div>
+
+    <section class="card" data-anfra-block="by-case" data-anfra-label="Median time by case">
+      <header>
+        <h2>Median time by case</h2>
+        <p class="caption">Log scale. The bar is the median run; the whisker reaches the slowest. File tools (psql, usql, anfra CLI, each writing a CSV file) and HTTP tools (anfra HTTP, Superset) are not comparable with each other.</p>
+      </header>
+      <section><div id="by-case" class="chart" data-anfra-query="byCase"></div></section>
+      <div id="by-case-status" class="status"></div>
+    </section>
+
+    <section class="card" data-anfra-block="compare" data-anfra-label="Compare tools">
+      <header>
+        <h2>Compare tools</h2>
+        <p class="caption">Pick the tools to compare. The first is the baseline; every other tool is a
+          bar against it, per case. A bar left of 1× is faster than the baseline, right of it slower; its
+          label says by how much. The scale doubles at each step.</p>
+      </header>
+      <section class="compare-body">
+        <div class="picker">
+          <div id="picks" class="picks" aria-label="Tools to compare"></div>
+          <div id="add-tool-combobox" class="combobox" style="width: 200px" data-auto-highlight="true">
+            <input id="add-tool-input" type="text" role="combobox" placeholder="Add a tool" autocomplete="off"
+                   autocorrect="off" spellcheck="false" aria-autocomplete="list" aria-expanded="false"
+                   aria-controls="add-tool-listbox" aria-label="Add a tool">
+            <div data-popover aria-hidden="true">
+              <div role="listbox" id="add-tool-listbox" aria-orientation="vertical" data-empty="Every tool is picked."></div>
+            </div>
+            <input type="hidden" name="add-tool" value="">
+          </div>
+        </div>
+        <p id="cross-path" class="caption warning-line"></p>
+        <div class="compare-area data-area">
+          <div id="compare-note" class="caption" hidden></div>
+          <div id="compare-chart" data-anfra-query="compare"></div>
+          <div id="compare-status" class="status"></div>
+        </div>
+      </section>
+    </section>
+
+    <section class="card" data-anfra-block="table" data-anfra-label="Every tool, every case">
+      <header>
+        <h2>Every tool, every case</h2>
+        <p class="caption">Median ms, with the slowest run beside it. Both paths; compare within one.</p>
+      </header>
+      <section class="table-wrap"><table class="results" id="table" data-anfra-query="table"></table></section>
+      <div id="table-status" class="status"></div>
+    </section>
+
+    <section class="card runs-card" data-anfra-container="runs" data-anfra-label="Every measured run">
+      <header>
+        <h2>Every measured run</h2>
+        <p class="caption">One row per measured run, for the machine, batch, warehouse and paths above.
+          Warm-up runs are not recorded. A failed run returned other rows or columns than its case
+          expects, and is left out of every time above.</p>
+      </header>
+      <section class="compare-body">
+        <div class="run-filters">
+          <div class="field-group" data-anfra-block="run-tool-picker" data-anfra-label="Tool" data-anfra-control="runTool">
+            <label for="run-tool-input">Tool</label>
+            <div id="run-tool-combobox" class="combobox" style="width: 220px" data-auto-highlight="true">
+              <input id="run-tool-input" type="text" role="combobox" placeholder="All" autocomplete="off"
+                     autocorrect="off" spellcheck="false" aria-autocomplete="list" aria-expanded="false"
+                     aria-controls="run-tool-listbox">
+              <div data-popover aria-hidden="true">
+                <div role="listbox" id="run-tool-listbox" aria-orientation="vertical" aria-multiselectable="true"
+                     data-empty="No tools."></div>
+              </div>
+              <input type="hidden" name="run-tool" value="[]">
+            </div>
+          </div>
+          <div class="field-group" data-anfra-block="run-case-picker" data-anfra-label="Case" data-anfra-control="runCase">
+            <label for="run-case-input">Case</label>
+            <div id="run-case-combobox" class="combobox" style="width: 220px" data-auto-highlight="true">
+              <input id="run-case-input" type="text" role="combobox" placeholder="All" autocomplete="off"
+                     autocorrect="off" spellcheck="false" aria-autocomplete="list" aria-expanded="false"
+                     aria-controls="run-case-listbox">
+              <div data-popover aria-hidden="true">
+                <div role="listbox" id="run-case-listbox" aria-orientation="vertical" aria-multiselectable="true"
+                     data-empty="No cases."></div>
+              </div>
+              <input type="hidden" name="run-case" value="[]">
+            </div>
+          </div>
+          <div class="field-group" data-anfra-block="run-result-picker" data-anfra-label="Result" data-anfra-control="runResult">
+            <span class="label">Result</span>
+            <div class="button-group" role="group" aria-label="Result">
+              <button class="btn" data-variant="secondary" type="button" data-result="all" aria-pressed="true">All</button>
+              <button class="btn" data-variant="outline" type="button" data-result="ok">Ok</button>
+              <button class="btn" data-variant="outline" type="button" data-result="failed">Failed</button>
+            </div>
+          </div>
+        </div>
+        <div class="data-area">
+          <div class="table-wrap runs-wrap" data-anfra-block="runs-table" data-anfra-label="Runs" data-anfra-query="runs">
+            <table class="results runs" id="runs-table"></table>
+          </div>
+          <div id="runs-status" class="status"></div>
+        </div>
+        <div class="runs-footer">
+          <span class="caption" id="runs-count"></span>
+          <button id="runs-more" class="btn" data-variant="outline" type="button" hidden>Load 50 more</button>
+        </div>
+      </section>
+    </section>
+
+    <section class="card" data-anfra-block="case-preview" data-anfra-label="Case preview">
+      <header>
+        <h2>Case preview</h2>
+        <p class="caption">What a case runs, and the first rows of what it returns: its columns of
+          bench_wide's first rows, as psql writes them to CSV. Every case scans bench_wide with a
+          LIMIT and no ORDER BY, which returns these rows first.</p>
+      </header>
+      <section class="compare-body">
+        <div class="field-group">
+          <label for="case-input">Case</label>
+          <div id="case-combobox" class="combobox" style="width: 220px" data-auto-highlight="true">
+            <input id="case-input" type="text" role="combobox" placeholder="Case" autocomplete="off"
+                   autocorrect="off" spellcheck="false" aria-autocomplete="list" aria-expanded="false"
+                   aria-controls="case-listbox">
+            <div data-popover aria-hidden="true">
+              <div role="listbox" id="case-listbox" aria-orientation="vertical" data-empty="No cases."></div>
+            </div>
+            <input type="hidden" name="case" value="">
+          </div>
+        </div>
+        <div id="case-facts" class="case-facts" data-anfra-query="caseList"></div>
+        <div class="data-area">
+          <div class="table-wrap preview-wrap"><table class="results preview" id="preview" data-anfra-query="sample"></table></div>
+          <div id="preview-status" class="status"></div>
+        </div>
+      </section>
+    </section>
+
+    <div class="caption notes">
+      <span>A run counts only when its result had the rows and columns its case expects; failed runs are flagged, and left out of the times.</span>
+      <span>Cases: narrow is 3 columns, medium 10, wide 30; the suffix is the rows. See the benchmark's README for the method.</span>
+    </div>
+  </main>
+
+  <script>
+    // ---- Design layer ----
+    const darkQuery = window.matchMedia('(prefers-color-scheme: dark)');
+    const applyTheme = () => document.documentElement.classList.toggle('dark', darkQuery.matches);
+    applyTheme();
+
+    function chartTheme () {
+      const css = getComputedStyle(document.documentElement);
+      const get = (name) => css.getPropertyValue(name).trim();
+      return { text: get('--chart-text'), grid: get('--chart-grid'), cat: [1, 2, 3, 4, 5, 6, 7, 8].map((n) => get(`--chart-cat-${n}`)) };
+    }
+
+    // How each tool is shown, and its color (the same on every chart).
+    const TOOLS = {
+      'psql': { label: 'psql', color: 8 },
+      'clickhouse-client': { label: 'clickhouse-client', color: 8 },
+      'snow': { label: 'snow', color: 8 },
+      'usql': { label: 'usql', color: 3 },
+      'anfra-cli-cold': { label: 'anfra CLI (cold)', color: 5 },
+      'anfra-cli-warm': { label: 'anfra CLI (warm)', color: 1 },
+      'anfra-http': { label: 'anfra HTTP', color: 6 },
+      'superset': { label: 'Superset', color: 2 },
+      'metabase': { label: 'Metabase', color: 4 },
+    };
+    const toolLabel = (tool) => TOOLS[tool]?.label ?? tool;
+    const PATH_LABEL = { file: 'CSV file', http: 'HTTP' };
+    const toolColor = (tool, theme) => theme.cat[(TOOLS[tool]?.color ?? 7) - 1];
+
+    const ms = new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 });
+    function formatMs (value) {
+      if (value === null || value === undefined) return '–';
+      const n = Number(value);
+      if (n >= 10000) return `${(n / 1000).toFixed(1)} s`;
+      if (n >= 100) return `${Math.round(n)}`;
+      return ms.format(n);
+    }
+    const axisMs = (n) => (n >= 1000 ? `${n / 1000} s` : `${n} ms`);
+    function formatRatio (r) {
+      return r < 1 ? `${(1 / r).toFixed(1)}× faster` : `${r.toFixed(1)}× slower`;
+    }
+
+    // ---- SDK wiring ----
+    const DATASET = 'benchmark';
+    const app = Anfra.createApp({ title: 'Query benchmark' });
+
+    const byCase = app.createQuery('byCase', {
+      dataset: DATASET,
+      aql: `
+        explore {
+          dimensions {
+            case_order: runs.case_order, case_name: runs.case_name,
+            tool_order: runs.tool_order, tool: runs.tool
+          }
+          measures { median_ms: runs.median_ms, slowest_ms: runs.slowest_ms }
+          sorts { case_order asc, tool_order asc }
+        }
+      `,
+    });
+
+    // Each tool's median per case, on the paths switched on: the comparison divides two of them in
+    // the browser, because the baseline is the reader's pick, never part of the AQL.
+    const compare = app.createQuery('compare', {
+      dataset: DATASET,
+      aql: `
+        explore {
+          dimensions {
+            path: runs.path, tool_order: runs.tool_order, tool: runs.tool,
+            case_order: runs.case_order, case_name: runs.case_name
+          }
+          measures { median_ms: runs.median_ms }
+          sorts { path asc, tool_order asc, case_order asc }
+        }
+      `,
+    });
+
+    const table = app.createQuery('table', {
+      dataset: DATASET,
+      aql: `
+        explore {
+          dimensions {
+            case_order: runs.case_order, case_name: runs.case_name,
+            path: runs.path, tool_order: runs.tool_order, tool: runs.tool
+          }
+          measures {
+            median_ms: runs.median_ms, slowest_ms: runs.slowest_ms,
+            ok_runs: runs.ok_runs, failed_runs: runs.failed_runs
+          }
+          sorts { case_order asc, tool_order asc }
+        }
+      `,
+    });
+
+    // The case preview: every case, and the first rows of bench_wide. The picked case is the reader's
+    // choice of what to show, not a condition: both queries return everything, and run once.
+    const caseDefs = app.createQuery('caseList', {
+      dataset: 'case_preview',
+      aql: `
+        explore {
+          dimensions {
+            case_order: cases.case_order, name: cases.name, sql: cases.sql,
+            rows: cases.rows, cols: cases.cols, columns: cases.columns
+          }
+          sorts { case_order asc }
+        }
+      `,
+    });
+    const sample = app.createQuery('sample', {
+      dataset: 'case_preview',
+      aql: `
+        explore {
+          dimensions { id: bench_sample.id, i1: bench_sample.i1, b1: bench_sample.b1, n1: bench_sample.n1, f1: bench_sample.f1, s1: bench_sample.s1, l1: bench_sample.l1, d1: bench_sample.d1, t1: bench_sample.t1, z1: bench_sample.z1, x1: bench_sample.x1, i2: bench_sample.i2, b2: bench_sample.b2, n2: bench_sample.n2, f2: bench_sample.f2, s2: bench_sample.s2, l2: bench_sample.l2, d2: bench_sample.d2, t2: bench_sample.t2, z2: bench_sample.z2, x2: bench_sample.x2, i3: bench_sample.i3, b3: bench_sample.b3, n3: bench_sample.n3, f3: bench_sample.f3, s3: bench_sample.s3, l3: bench_sample.l3, d3: bench_sample.d3, t3: bench_sample.t3, z3: bench_sample.z3, x3: bench_sample.x3, i4: bench_sample.i4, b4: bench_sample.b4, n4: bench_sample.n4, f4: bench_sample.f4, s4: bench_sample.s4, l4: bench_sample.l4, d4: bench_sample.d4, t4: bench_sample.t4, z4: bench_sample.z4, x4: bench_sample.x4, i5: bench_sample.i5, b5: bench_sample.b5, n5: bench_sample.n5, f5: bench_sample.f5, s5: bench_sample.s5, l5: bench_sample.l5, d5: bench_sample.d5, t5: bench_sample.t5, z5: bench_sample.z5, x5: bench_sample.x5 }
+          sorts { id asc }
+        }
+      `,
+    });
+    const PREVIEW_ROWS = 10;
+    let pickedCase = 'medium_100k';
+
+    // Every measured run, a page at a time. Sorted down to the run's id, so pages never repeat or skip.
+    const RUN_PAGE = 50;
+    const runs = app.createQuery('runs', {
+      dataset: DATASET,
+      pageSize: RUN_PAGE,
+      aql: `
+        explore {
+          dimensions {
+            case_order: runs.case_order, case_name: runs.case_name,
+            tool_order: runs.tool_order, tool: runs.tool, path: runs.path,
+            round: runs.round, ms: runs.ms, result_rows: runs.result_rows,
+            result_cols: runs.result_cols, ok: runs.ok, run_id: runs.run_id
+          }
+          sorts { case_order asc, tool_order asc, round asc, run_id asc }
+        }
+      `,
+    });
+    const runTool = app.createFilter('runTool', { dataset: DATASET, field: 'runs.tool', label: 'Tool' });
+    const runCase = app.createFilter('runCase', { dataset: DATASET, field: 'runs.case_name', label: 'Case' });
+    const runResult = app.createFilter('runResult', { dataset: DATASET, field: 'runs.ok', label: 'Result' });
+
+    // One machine, batch and warehouse at a time: their runs are not comparable with each other's.
+    const machine = app.createFilter('machine', { dataset: DATASET, field: 'runs.machine', label: 'Machine' });
+    const batch = app.createFilter('batch', { dataset: DATASET, field: 'runs.batch', label: 'Batch' });
+    const db = app.createFilter('db', { dataset: DATASET, field: 'runs.db', label: 'Warehouse' });
+    const path = app.createFilter('path', { type: 'string', options: ['file', 'http'], default: { operator: 'is', values: ['file', 'http'] } });
+
+    for (const query of [byCase, compare, table, runs]) {
+      app.mapControl(machine, query, { field: 'runs.machine' });
+      app.mapControl(batch, query, { field: 'runs.batch' });
+      app.mapControl(db, query, { field: 'runs.db' });
+    }
+    app.mapControl(path, byCase, { field: 'runs.path' });
+    app.mapControl(path, compare, { field: 'runs.path' });
+    app.mapControl(path, runs, { field: 'runs.path' });
+    app.mapControl(runTool, runs, { field: 'runs.tool' });
+    app.mapControl(runCase, runs, { field: 'runs.case_name' });
+    app.mapControl(runResult, runs, { field: 'runs.ok' });
+
+    const byCaseChart = echarts.init(document.getElementById('by-case'));
+    const compareChart = echarts.init(document.getElementById('compare-chart'));
+    const logged = new Set();
+
+    function renderStatus (query, elementId, emptyText) {
+      const el = document.getElementById(elementId);
+      el.replaceChildren();
+      if (query.state === 'executing' && !query.result) {
+        el.append(Object.assign(document.createElement('div'), { className: 'skeleton' }));
+      } else if (query.state === 'error') {
+        const alert = Object.assign(document.createElement('div'), { className: 'alert' });
+        alert.dataset.variant = 'destructive';
+        const title = document.createElement('h2');
+        title.textContent = "Couldn't load this block";
+        const detail = document.createElement('section');
+        detail.textContent = query.error.message;
+        alert.append(title, detail);
+        el.append(alert);
+      } else if (query.state === 'success' && query.result.rows.length === 0) {
+        el.append(Object.assign(document.createElement('div'), { className: 'empty', textContent: emptyText }));
+      }
+      el.classList.toggle('visible', el.childElementCount > 0);
+    }
+
+    function logFirstResult (query) {
+      if (query.state !== 'success' || logged.has(query.name)) return;
+      logged.add(query.name);
+      console.log(query.name, 'columns', query.result.columns, 'first row', query.result.rows[0],
+        'executed AQL', query.result.debug?.executedAql);
+    }
+
+    // Cases in the order the query sorted them (by result size).
+    function caseList (rows) {
+      const names = [];
+      for (const row of rows) if (!names.includes(row.case_name)) names.push(row.case_name);
+      return names;
+    }
+
+    // The whisker from a bar's top (median) to the slowest run, centred on that bar. ECharts lays out
+    // grouped bars by barCategoryGap and barGap; the same numbers place the whisker.
+    const CATEGORY_GAP = 0.3, BAR_GAP = 0.2;
+    function whiskerSeries (tool, index, count, cases, rows, color) {
+      return {
+        type: 'custom', name: toolLabel(tool), silent: true, z: 3,
+        renderItem: (params, api) => {
+          const caseIndex = api.value(0);
+          const top = api.coord([caseIndex, api.value(1)]);
+          const end = api.coord([caseIndex, api.value(2)]);
+          const band = api.size([1, 0])[0] * (1 - CATEGORY_GAP);
+          const barWidth = band / (count + (count - 1) * BAR_GAP);
+          const x = top[0] - band / 2 + index * barWidth * (1 + BAR_GAP) + barWidth / 2;
+          const cap = Math.min(barWidth * 0.5, 8);
+          const style = { stroke: color, lineWidth: 1.5 };
+          return {
+            type: 'group',
+            children: [
+              { type: 'line', shape: { x1: x, y1: top[1], x2: x, y2: end[1] }, style },
+              { type: 'line', shape: { x1: x - cap / 2, y1: end[1], x2: x + cap / 2, y2: end[1] }, style },
+            ],
+          };
+        },
+        data: cases.map((name, i) => {
+          const row = rows.find((r) => r.case_name === name && r.tool === tool);
+          return row && row.median_ms !== null ? [i, Number(row.median_ms), Number(row.slowest_ms)] : [i, null, null];
+        }),
+      };
+    }
+
+    function renderByCase (theme) {
+      if (!byCase.result) return;
+      const rows = byCase.result.rows;
+      const cases = caseList(rows);
+      const tools = [];
+      for (const row of rows) if (!tools.includes(row.tool)) tools.push(row.tool);
+      tools.sort((a, b) => Number(rows.find((r) => r.tool === a).tool_order) - Number(rows.find((r) => r.tool === b).tool_order));
+
+      const bars = tools.map((tool) => ({
+        type: 'bar', name: toolLabel(tool), id: `bar-${tool}`,
+        barCategoryGap: `${CATEGORY_GAP * 100}%`, barGap: `${BAR_GAP * 100}%`,
+        itemStyle: { color: toolColor(tool, theme), borderRadius: [3, 3, 0, 0] },
+        data: cases.map((name) => {
+          const row = rows.find((r) => r.case_name === name && r.tool === tool);
+          return row && row.median_ms !== null ? Number(row.median_ms) : null;
+        }),
+      }));
+      const whiskers = tools.map((tool, i) => whiskerSeries(tool, i, tools.length, cases, rows, theme.text));
+
+      byCaseChart.setOption({
+        animation: false,
+        textStyle: { color: theme.text, fontFamily: 'Inter Variable, Inter, system-ui, sans-serif' },
+        legend: { top: 0, data: tools.map(toolLabel), textStyle: { color: theme.text } },
+        grid: { left: 8, right: 16, top: 40, bottom: 8, containLabel: true },
+        tooltip: {
+          trigger: 'axis', axisPointer: { type: 'shadow' },
+          formatter: (items) => {
+            const name = cases[items[0].dataIndex];
+            const lines = tools.map((tool) => {
+              const row = rows.find((r) => r.case_name === name && r.tool === tool);
+              if (!row || row.median_ms === null) return null;
+              return `${toolLabel(tool)}: <b>${formatMs(row.median_ms)} ms</b> (slowest ${formatMs(row.slowest_ms)})`;
+            }).filter(Boolean);
+            return [`<b>${name}</b>`, ...lines].join('<br>');
+          },
+        },
+        xAxis: { type: 'category', data: cases, axisLabel: { color: theme.text, interval: 0 },
+                 axisLine: { lineStyle: { color: theme.grid } } },
+        yAxis: { type: 'log', logBase: 10, name: 'ms', nameTextStyle: { color: theme.text },
+                 axisLabel: { color: theme.text, formatter: axisMs }, splitLine: { lineStyle: { color: theme.grid } } },
+        series: [...bars, ...whiskers],
+      }, { replaceMerge: ['series'] });
+    }
+
+    // A ratio on a doubling scale: log2, so 1× is 0, 2× slower is +1, 4× faster is -2. One axis then
+    // fits a tool 2× off the baseline beside one 30× off.
+    const doubling = (ratio) => Math.log2(ratio);
+    const doublingLabel = (x) => (x === 0 ? '1×' : `${2 ** Math.abs(Math.round(x))}×`);
+
+    // The reader's picks, in order; the first is the baseline. Null until the first result picks the
+    // defaults: Superset and Metabase against anfra HTTP as the baseline, or else the first two tools.
+    let picks = null;
+    const DEFAULT_PICKS = ['anfra-http', 'superset', 'metabase'];
+
+    // The tools in the latest result, in the table's order, each with its path.
+    function availableTools () {
+      const tools = new Map();
+      for (const row of compare.result?.rows ?? []) {
+        if (!tools.has(row.tool)) tools.set(row.tool, { tool: row.tool, path: row.path, order: Number(row.tool_order) });
+      }
+      return [...tools.values()].sort((a, b) => (a.path === b.path ? a.order - b.order : a.path === 'file' ? -1 : 1));
+    }
+
+    function currentPicks (available) {
+      const names = available.map((t) => t.tool);
+      if (picks === null && available.length > 0) {
+        // anfra HTTP as the baseline, then whichever of the BI tools this batch has.
+        const preferred = DEFAULT_PICKS.filter((tool) => names.includes(tool));
+        picks = preferred[0] === DEFAULT_PICKS[0] && preferred.length >= 2 ? preferred : names.slice(0, 2);
+      }
+      return (picks ?? []).filter((tool) => names.includes(tool));
+    }
+
+    function setPicks (next) {
+      picks = next;
+      render();
+    }
+
+    function renderPicker (available, shown) {
+      const pathOf = new Map(available.map((t) => [t.tool, t.path]));
+      document.getElementById('picks').replaceChildren(...shown.map((tool, i) => {
+        const chip = Object.assign(document.createElement('span'), { className: i === 0 ? 'chip baseline' : 'chip' });
+        if (i === 0) chip.append(Object.assign(document.createElement('span'), { className: 'tag', textContent: 'Baseline' }));
+        chip.append(`${toolLabel(tool)} · ${PATH_LABEL[pathOf.get(tool)] ?? pathOf.get(tool)}`);
+        if (i > 0) {
+          const lead = Object.assign(document.createElement('button'), { className: 'btn', type: 'button', textContent: 'Make baseline' });
+          lead.dataset.variant = 'ghost';
+          lead.addEventListener('click', () => setPicks([tool, ...shown.filter((t) => t !== tool)]));
+          chip.append(lead);
+        }
+        const remove = Object.assign(document.createElement('button'), { className: 'btn', type: 'button', textContent: '×' });
+        remove.dataset.variant = 'ghost';
+        remove.setAttribute('aria-label', `Remove ${toolLabel(tool)}`);
+        remove.addEventListener('click', () => setPicks(shown.filter((t) => t !== tool)));
+        chip.append(remove);
+        return chip;
+      }));
+
+      // The add picker offers the tools not picked yet. Rebuilt only when that list changes, so an open
+      // dropdown is not replaced under the reader.
+      const offered = available.filter((t) => !shown.includes(t.tool));
+      const key = offered.map((t) => t.tool).join(',');
+      const list = document.getElementById('add-tool-listbox');
+      if (list.dataset.key !== key) {
+        list.dataset.key = key;
+        list.replaceChildren(...offered.map((t) => {
+          const option = document.createElement('div');
+          option.setAttribute('role', 'option');
+          option.dataset.value = t.tool;
+          option.textContent = `${toolLabel(t.tool)} · ${PATH_LABEL[t.path] ?? t.path}`;
+          return option;
+        }));
+        document.getElementById('add-tool-combobox').refresh?.();
+      }
+
+      // The warning's line is always there, empty or not, so the chart below never moves.
+      const crossPath = new Set(shown.map((tool) => pathOf.get(tool))).size > 1;
+      document.getElementById('cross-path').textContent = crossPath
+        ? '⚠ These tools deliver results different ways (a CSV file from a CLI, an answer over HTTP), so the comparison is not like for like.'
+        : '';
+    }
+
+    // One chart: a case per row, a bar per picked tool after the baseline, in its own color.
+    function renderCompare (theme) {
+      if (!compare.result) return;
+      const available = availableTools();
+      const shown = currentPicks(available);
+      renderPicker(available, shown);
+
+      const [baseline, ...others] = shown;
+      const chartEl = document.getElementById('compare-chart');
+      const note = document.getElementById('compare-note');
+      note.hidden = others.length > 0;
+      note.textContent = available.length < 2 ? 'Only one tool on these paths: nothing to compare.' : 'Add a tool to compare with the baseline.';
+      chartEl.hidden = others.length === 0;
+      if (others.length === 0) return;
+
+      const medians = new Map(); // `${tool}:${case}` → median ms
+      const cases = [];
+      for (const row of compare.result.rows) {
+        if (row.median_ms === null) continue;
+        medians.set(`${row.tool}:${row.case_name}`, Number(row.median_ms));
+        if (!cases.some((c) => c.name === row.case_name)) cases.push({ name: row.case_name, order: Number(row.case_order) });
+      }
+      // Cases the baseline ran, smallest result at the top.
+      const rows = cases.filter((c) => medians.has(`${baseline}:${c.name}`)).sort((a, b) => b.order - a.order);
+      const ratio = (tool, name) => {
+        const t = medians.get(`${tool}:${name}`), b = medians.get(`${baseline}:${name}`);
+        return t === undefined || b === undefined ? null : t / b;
+      };
+
+      const values = others.flatMap((tool) => rows.map((c) => ratio(tool, c.name))).filter((r) => r !== null).map(doubling);
+      const reach = Math.ceil(Math.max(1, ...values.map(Math.abs))) + 1; // a step of room for the labels
+      chartEl.style.height = `${rows.length * (others.length * 18 + 14) + 84}px`;
+      compareChart.resize();
+      compareChart.setOption({
+        animation: false,
+        textStyle: { color: theme.text, fontFamily: 'Inter Variable, Inter, system-ui, sans-serif' },
+        legend: { top: 0, data: others.map(toolLabel), textStyle: { color: theme.text } },
+        grid: { left: 8, right: 8, top: 56, bottom: 4, containLabel: true }, // room for the baseline's name
+        tooltip: {
+          trigger: 'axis', axisPointer: { type: 'shadow' },
+          formatter: (items) => {
+            const name = rows[items[0].dataIndex].name;
+            const lines = others.map((tool) => {
+              const r = ratio(tool, name);
+              if (r === null) return null;
+              return `${toolLabel(tool)}: <b>${formatRatio(r)}</b> (${formatMs(medians.get(`${tool}:${name}`))} ms)`;
+            }).filter(Boolean);
+            return [`<b>${name}</b>`, `${toolLabel(baseline)}: ${formatMs(medians.get(`${baseline}:${name}`))} ms`, ...lines].join('<br>');
+          },
+        },
+        xAxis: { type: 'value', min: -reach, max: reach, interval: 1,
+                 axisLabel: { color: theme.text, formatter: doublingLabel },
+                 splitLine: { lineStyle: { color: theme.grid } } },
+        yAxis: { type: 'category', data: rows.map((c) => c.name),
+                 axisLabel: { color: theme.text, fontSize: 12 }, axisTick: { show: false }, axisLine: { show: false } },
+        series: others.map((tool, i) => ({
+          type: 'bar', id: `vs-${tool}`, name: toolLabel(tool), barGap: '15%', barCategoryGap: '25%',
+          itemStyle: { color: toolColor(tool, theme) },
+          data: rows.map((c) => {
+            const r = ratio(tool, c.name);
+            if (r === null) return null;
+            const v = doubling(r);
+            return { value: v, itemStyle: { borderRadius: v < 0 ? [3, 0, 0, 3] : [0, 3, 3, 0] },
+                     label: { position: v < 0 ? 'left' : 'right' } };
+          }),
+          label: { show: true, color: theme.text, fontSize: 11,
+                   formatter: (p) => formatRatio(ratio(tool, rows[p.dataIndex].name)) },
+          // The 1× line is the baseline: its name sits at the line's top end.
+          markLine: i > 0 ? undefined : {
+            silent: true, symbol: 'none',
+            label: { show: true, position: 'end', color: theme.text, fontSize: 12, fontWeight: 600,
+                     formatter: `${toolLabel(baseline)} · baseline` },
+            lineStyle: { color: theme.text, type: 'solid', width: 1 }, data: [{ xAxis: 0 }],
+          },
+        })),
+      }, { replaceMerge: ['series'] });
+    }
+
+    function renderTable () {
+      const el = document.getElementById('table');
+      if (!table.result) return;
+      const rows = table.result.rows;
+      const cases = caseList(rows);
+      const columns = [];
+      for (const row of rows) {
+        if (!columns.some((c) => c.tool === row.tool)) columns.push({ tool: row.tool, path: row.path, order: Number(row.tool_order) });
+      }
+      columns.sort((a, b) => (a.path === b.path ? a.order - b.order : a.path === 'file' ? -1 : 1));
+      const pathCount = (p) => columns.filter((c) => c.path === p).length;
+
+      const head = document.createElement('thead');
+      const pathRow = document.createElement('tr');
+      pathRow.append(document.createElement('th'));
+      for (const p of ['file', 'http']) {
+        if (!pathCount(p)) continue;
+        const th = Object.assign(document.createElement('th'), { textContent: p === 'file' ? 'File (CLI → CSV)' : 'HTTP (frontend)', colSpan: pathCount(p) });
+        th.style.textAlign = 'center';
+        pathRow.append(th);
+      }
+      const toolRow = document.createElement('tr');
+      toolRow.append(Object.assign(document.createElement('th'), { textContent: 'Case' }));
+      for (const c of columns) toolRow.append(Object.assign(document.createElement('th'), { textContent: toolLabel(c.tool) }));
+      head.append(pathRow, toolRow);
+
+      const body = document.createElement('tbody');
+      for (const name of cases) {
+        const tr = document.createElement('tr');
+        tr.append(Object.assign(document.createElement('td'), { className: 'case', textContent: name }));
+        for (const c of columns) {
+          const td = document.createElement('td');
+          const row = rows.find((r) => r.case_name === name && r.tool === c.tool);
+          if (!row) {
+            td.textContent = '–';
+          } else {
+            if (row.median_ms !== null) {
+              td.append(document.createTextNode(formatMs(row.median_ms)));
+              td.append(Object.assign(document.createElement('span'), { className: 'slowest', textContent: `(${formatMs(row.slowest_ms)})` }));
+            } else {
+              td.append(document.createTextNode('–'));
+            }
+            const failed = Number(row.failed_runs ?? 0);
+            if (failed > 0) td.append(Object.assign(document.createElement('span'), { className: 'failed', textContent: `${failed} failed` }));
+          }
+          tr.append(td);
+        }
+        body.append(tr);
+      }
+      el.replaceChildren(head, body);
+    }
+
+    function render () {
+      if (typeof echarts === 'undefined') return;
+      renderStatus(byCase, 'by-case-status', 'No runs for this machine, batch, warehouse and path.');
+      renderStatus(compare, 'compare-status', 'No runs for this machine, batch, warehouse and path.');
+      renderStatus(table, 'table-status', 'No runs for this machine, batch and warehouse.');
+      for (const query of [byCase, compare, table]) logFirstResult(query);
+      const theme = chartTheme();
+      renderByCase(theme);
+      renderCompare(theme);
+      renderTable();
+      renderRuns();
+      renderPreview();
+    }
+
+    function renderRuns () {
+      renderStatus(runs, 'runs-status', 'No runs for these filters.');
+      logFirstResult(runs);
+      if (!runs.result) return;
+      const COLUMNS = [
+        ['case_name', 'Case'], ['tool', 'Tool'], ['path', 'Path'], ['round', 'Round'],
+        ['ms', 'Time (ms)'], ['result_rows', 'Rows'], ['result_cols', 'Columns'], ['ok', 'Result'],
+      ];
+      const head = document.createElement('thead');
+      const headRow = document.createElement('tr');
+      for (const [, label] of COLUMNS) headRow.append(Object.assign(document.createElement('th'), { textContent: label }));
+      head.append(headRow);
+      const body = document.createElement('tbody');
+      for (const row of runs.result.rows) {
+        const tr = document.createElement('tr');
+        const failed = row.ok === false || row.ok === 'false';
+        for (const [key] of COLUMNS) {
+          let text;
+          if (key === 'tool') text = toolLabel(row.tool);
+          else if (key === 'path') text = PATH_LABEL[row.path] ?? row.path;
+          else if (key === 'ms') text = ms.format(Number(row.ms));
+          else if (key === 'result_rows') text = Number(row.result_rows).toLocaleString();
+          else if (key === 'ok') text = failed ? 'Failed' : 'Ok';
+          else text = String(row[key] ?? '');
+          tr.append(Object.assign(document.createElement('td'), {
+            className: key === 'case_name' ? 'case' : key === 'ok' && failed ? 'failed-run' : '',
+            textContent: text,
+          }));
+        }
+        body.append(tr);
+      }
+      document.getElementById('runs-table').replaceChildren(head, body);
+      const shown = runs.result.rows.length;
+      document.getElementById('runs-count').textContent = runs.hasMore
+        ? `Showing the first ${shown} runs.`
+        : `${shown} ${shown === 1 ? 'run' : 'runs'}.`;
+      document.getElementById('runs-more').hidden = !runs.hasMore;
+    }
+
+    function renderPreview () {
+      renderStatus(sample, 'preview-status', 'No sample rows.');
+      logFirstResult(caseDefs);
+      logFirstResult(sample);
+      if (!caseDefs.result || !sample.result) return;
+      const cases = caseDefs.result.rows;
+      const list = document.getElementById('case-listbox');
+      if (list.dataset.key !== cases.map((c) => c.name).join(',')) {
+        list.dataset.key = cases.map((c) => c.name).join(',');
+        list.replaceChildren(...cases.map((c) => {
+          const option = document.createElement('div');
+          option.setAttribute('role', 'option');
+          option.dataset.value = c.name;
+          option.textContent = c.name;
+          return option;
+        }));
+        const box = document.getElementById('case-combobox');
+        box.refresh?.();
+        if (!cases.some((c) => c.name === pickedCase)) pickedCase = cases[0]?.name;
+        if (pickedCase) box.setValue?.(pickedCase);
+      }
+      const picked = cases.find((c) => c.name === pickedCase);
+      const facts = document.getElementById('case-facts');
+      const preview = document.getElementById('preview');
+      if (!picked) { facts.replaceChildren(); preview.replaceChildren(); return; }
+
+      const rowCount = Number(picked.rows);
+      const columns = picked.columns.split(', ');
+      const shown = Math.min(rowCount, PREVIEW_ROWS);
+      facts.replaceChildren(
+        Object.assign(document.createElement('code'), { textContent: picked.sql }),
+        Object.assign(document.createElement('span'), {
+          className: 'caption',
+          textContent: `Returns ${rowCount.toLocaleString()} ${rowCount === 1 ? 'row' : 'rows'} × ${picked.cols} columns. ` +
+            `Showing the first ${shown}.`,
+        }),
+      );
+
+      // SELECT 1 reads no table: its one row is its own.
+      const rows = picked.name === 'select1'
+        ? [{ one: '1' }]
+        : sample.result.rows.slice(0, shown);
+      const head = document.createElement('thead');
+      const headRow = document.createElement('tr');
+      for (const column of columns) headRow.append(Object.assign(document.createElement('th'), { textContent: column }));
+      head.append(headRow);
+      const body = document.createElement('tbody');
+      for (const row of rows) {
+        const tr = document.createElement('tr');
+        for (const column of columns) {
+          const value = row[column];
+          const empty = value === null || value === undefined || value === '';
+          tr.append(Object.assign(document.createElement('td'), {
+            className: empty ? 'null' : '',
+            textContent: empty ? 'NULL' : String(value),
+          }));
+        }
+        body.append(tr);
+      }
+      preview.replaceChildren(head, body);
+    }
+
+    document.getElementById('case-combobox').addEventListener('change', (event) => {
+      if (!event.detail.value) return;
+      pickedCase = String(event.detail.value);
+      renderPreview();
+    });
+
+    app.subscribe(render);
+    darkQuery.addEventListener('change', () => { applyTheme(); render(); });
+    window.addEventListener('resize', () => { byCaseChart.resize(); compareChart.resize(); });
+
+    // Runs: more pages, and the result switch (all, ok, failed).
+    document.getElementById('runs-more').addEventListener('click', async (event) => {
+      event.currentTarget.disabled = true;
+      try { await runs.fetchMore(); } catch (err) { console.error('Could not load more runs', err); }
+      event.currentTarget.disabled = false;
+    });
+    document.querySelectorAll('[data-result]').forEach((button) => {
+      button.addEventListener('click', () => {
+        document.querySelectorAll('[data-result]').forEach((other) => {
+          const on = other === button;
+          other.dataset.variant = on ? 'secondary' : 'outline';
+          other.setAttribute('aria-pressed', String(on));
+        });
+        const kind = button.dataset.result;
+        runResult.setCondition(kind === 'ok' ? { operator: 'is_true', values: [] }
+          : kind === 'failed' ? { operator: 'is_false', values: [] }
+          : { operator: 'is', values: [] });
+        app.execute();
+      });
+    });
+
+    // Tool and case: multi-select comboboxes over the runs; none picked means all.
+    async function setUpMultiPicker (filter, id, label) {
+      const [options] = await Promise.all([filter.loadOptions(), domReady]);
+      document.getElementById(`${id}-listbox`).replaceChildren(...options.map((value) => {
+        const option = document.createElement('div');
+        option.setAttribute('role', 'option');
+        option.dataset.value = String(value);
+        option.textContent = label(String(value));
+        return option;
+      }));
+      const box = document.getElementById(`${id}-combobox`);
+      box.refresh();
+      box.addEventListener('change', (event) => {
+        const values = Array.isArray(event.detail.value) ? event.detail.value.map(String) : [];
+        filter.setCondition({ operator: 'is', values });
+        app.execute();
+      });
+    }
+
+    // Path: two toggles over a manual filter, both on by default. At least one stays on.
+    const pathButtons = [...document.querySelectorAll('[data-path]')];
+    pathButtons.forEach((button) => {
+      button.addEventListener('click', () => {
+        const on = button.getAttribute('aria-pressed') !== 'true';
+        const values = pathButtons
+          .filter((b) => (b === button ? on : b.getAttribute('aria-pressed') === 'true'))
+          .map((b) => b.dataset.path);
+        if (values.length === 0) return;
+        button.dataset.variant = on ? 'secondary' : 'outline';
+        button.setAttribute('aria-pressed', String(on));
+        path.setCondition({ operator: 'is', values });
+        app.execute();
+      });
+    });
+
+    // Add a tool to the comparison; the combobox empties again for the next one.
+    const addTool = document.getElementById('add-tool-combobox');
+    addTool.addEventListener('change', (event) => {
+      const tool = event.detail.value;
+      if (!tool) return;
+      const shown = currentPicks(availableTools());
+      if (!shown.includes(tool)) setPicks([...shown, String(tool)]);
+      if (typeof addTool.clear === 'function') addTool.clear();
+    });
+
+    // Machine, batch and warehouse: single-select comboboxes, each starting on one value (the latest
+    // batch), since runs from different ones are not comparable.
+    const domReady = document.readyState === 'loading'
+      ? new Promise((resolve) => document.addEventListener('DOMContentLoaded', resolve))
+      : Promise.resolve();
+
+    async function setUpPicker (filter, id, pick) {
+      const [options] = await Promise.all([filter.loadOptions(), domReady]);
+      const values = options.map(String);
+      const box = document.getElementById(`${id}-combobox`);
+      document.getElementById(`${id}-listbox`).replaceChildren(...values.map((value) => {
+        const option = document.createElement('div');
+        option.setAttribute('role', 'option');
+        option.dataset.value = value;
+        option.textContent = value;
+        return option;
+      }));
+      box.refresh();
+      const start = pick(values);
+      if (start !== undefined) {
+        box.setValue(start);
+        filter.setCondition({ operator: 'is', values: [start] });
+      }
+      box.addEventListener('change', (event) => {
+        const value = event.detail.value;
+        if (!value) return;
+        filter.setCondition({ operator: 'is', values: [String(value)] });
+        app.execute();
+      });
+    }
+
+    const first = (values) => values[0];
+    const latest = (values) => [...values].sort((a, b) => Number(b) - Number(a))[0];
+    Promise.all([
+      setUpPicker(machine, 'machine', first),
+      setUpPicker(batch, 'batch', latest),
+      setUpPicker(db, 'db', (values) => (values.includes('postgres') ? 'postgres' : values[0])),
+      setUpMultiPicker(runTool, 'run-tool', toolLabel),
+      setUpMultiPicker(runCase, 'run-case', (value) => value),
+    ]).catch((err) => console.error('Could not load the pickers', err))
+      .finally(() => app.execute());
+  </script>
+</body>
+</html>

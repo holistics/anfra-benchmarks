@@ -1,0 +1,73 @@
+Model runs {
+  type: 'query'
+  label: 'Benchmark runs'
+  description: 'One measured run of a case by a tool, from ../results/<machine>/*.jsonl. Warm-up runs are not recorded. A run is ok when its result had the rows and columns its case expects; failed runs are kept, and left out of the timing measures.'
+  data_source_name: 'results'
+  query: @sql
+    SELECT
+      -- The machine is the results folder's name: ../results/<machine>/batch<N>.jsonl.
+      parse_filename(parse_dirpath(filename)) AS machine,
+      batch, db, tool, path, "case" AS case_name, round, ms, rows, cols, ok,
+      concat_ws(':', machine, batch, db, tool, "case", round) AS run_id,
+      -- Cases in result-size order, tools in the order the tables use.
+      CASE "case"
+        WHEN 'select1' THEN 1 WHEN 'narrow_1' THEN 2 WHEN 'narrow_1k' THEN 3
+        WHEN 'narrow_100k' THEN 4 WHEN 'narrow_1m' THEN 5 WHEN 'medium_100k' THEN 6
+        WHEN 'wide_1' THEN 7 WHEN 'wide_1k' THEN 8 WHEN 'wide_100k' THEN 9
+        ELSE 99 END AS case_order,
+      CASE tool
+        WHEN 'psql' THEN 1 WHEN 'clickhouse-client' THEN 1 WHEN 'snow' THEN 1
+        WHEN 'usql' THEN 2 WHEN 'anfra-cli-cold' THEN 3 WHEN 'anfra-cli-warm' THEN 4
+        WHEN 'anfra-http' THEN 5 WHEN 'superset' THEN 6 WHEN 'metabase' THEN 7
+        ELSE 99 END AS tool_order
+    FROM read_json_auto('../results/*/*.jsonl', union_by_name = true, filename = true)
+  ;;
+
+  dimension run_id { label: 'Run' type: 'text' primary_key: true hidden: true definition: @sql {{ #SOURCE.run_id }};; }
+  dimension machine {
+    label: 'Machine'
+    type: 'text'
+    description: 'The machine the runs were measured on: the name of their results folder. Compare tools only within one machine.'
+    definition: @sql {{ #SOURCE.machine }};;
+  }
+  dimension batch { label: 'Batch' type: 'number' definition: @sql {{ #SOURCE.batch }};; }
+  dimension db { label: 'Warehouse' type: 'text' definition: @sql {{ #SOURCE.db }};; }
+  dimension tool { label: 'Tool' type: 'text' definition: @sql {{ #SOURCE.tool }};; }
+  dimension tool_order { label: 'Tool order' type: 'number' hidden: true definition: @sql {{ #SOURCE.tool_order }};; }
+  dimension path {
+    label: 'Path'
+    type: 'text'
+    description: 'How the result is delivered: file (a CLI writes a CSV file) or http (a frontend reads the answer). Compare tools only within a path.'
+    definition: @sql {{ #SOURCE.path }};;
+  }
+  dimension case_name { label: 'Case' type: 'text' definition: @sql {{ #SOURCE.case_name }};; }
+  dimension case_order { label: 'Case order' type: 'number' hidden: true definition: @sql {{ #SOURCE.case_order }};; }
+  dimension round { label: 'Round' type: 'number' definition: @sql {{ #SOURCE.round }};; }
+  dimension ms { label: 'Time (ms)' type: 'number' definition: @sql {{ #SOURCE.ms }};; }
+  dimension result_rows { label: 'Rows returned' type: 'number' definition: @sql {{ #SOURCE.rows }};; }
+  dimension result_cols { label: 'Columns returned' type: 'number' definition: @sql {{ #SOURCE.cols }};; }
+  dimension ok { label: 'Ok' type: 'truefalse' definition: @sql {{ #SOURCE.ok }};; }
+
+  measure median_ms {
+    label: 'Median (ms)'
+    type: 'number'
+    description: 'The median time of the ok runs.'
+    definition: @aql median(runs.ms) | where(runs.ok == true) ;;
+  }
+  measure slowest_ms {
+    label: 'Slowest (ms)'
+    type: 'number'
+    description: 'The slowest ok run.'
+    definition: @aql max(runs.ms) | where(runs.ok == true) ;;
+  }
+  measure ok_runs {
+    label: 'Ok runs'
+    type: 'number'
+    definition: @aql count(runs.run_id) | where(runs.ok == true) ;;
+  }
+  measure failed_runs {
+    label: 'Failed runs'
+    type: 'number'
+    definition: @aql count(runs.run_id) | where(runs.ok == false) ;;
+  }
+}

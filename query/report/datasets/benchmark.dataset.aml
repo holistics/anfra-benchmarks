@@ -1,0 +1,7 @@
+Dataset benchmark {
+  label: 'Query benchmark'
+  description: 'Measured runs of the query benchmark (../README.md): each tool running each case, by machine, batch and warehouse. Compare tools only within one machine, batch and path (file or http).'
+  data_source_name: 'results'
+  models: [runs]
+  relationships: []
+}

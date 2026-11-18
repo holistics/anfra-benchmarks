@@ -1,0 +1,57 @@
+# The warehouses and the tools that run as servers. Started by run.sh; ports
+# are on 127.0.0.1 only and chosen to stay clear of anfra's dev ones.
+name: anfra-bench-query
+
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: bench
+      POSTGRES_PASSWORD: bench
+      POSTGRES_DB: bench
+    command: ["postgres", "-c", "shared_buffers=1GB", "-c", "max_connections=200"]
+    ports:
+      - "127.0.0.1:55432:5432"
+    volumes:
+      - ./postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "bench"]
+      interval: 2s
+      retries: 60
+
+  # On the host network, so Superset reaches Postgres the way the host tools
+  # do (127.0.0.1:55432), not over the compose network.
+  superset:
+    build: ./superset
+    network_mode: host
+    environment:
+      SUPERSET_CONFIG_PATH: /app/bench/superset_config.py
+      SUPERSET_BIND_ADDRESS: 127.0.0.1
+      SUPERSET_PORT: "58088"
+      GUNICORN_TIMEOUT: "600"
+      GUNICORN_LOGLEVEL: warning
+      ACCESS_LOG_FILE: /dev/null
+    volumes:
+      - ./superset/superset_config.py:/app/bench/superset_config.py:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # Metabase, on the host network for the same reason. Its own metadata stays
+  # in its embedded H2 database. The row limits are raised to Metabase's
+  # maximum (1,048,575), so the 1M-row case is returned whole.
+  metabase:
+    image: metabase/metabase:v0.65.5.1
+    network_mode: host
+    environment:
+      MB_JETTY_HOST: 127.0.0.1
+      MB_JETTY_PORT: "58089"
+      MB_UNAGGREGATED_QUERY_ROW_LIMIT: "1048575"
+      MB_AGGREGATED_QUERY_ROW_LIMIT: "1048575"
+      MB_ENABLE_QUERY_CACHING: "false"
+      MB_ANON_TRACKING_ENABLED: "false"
+      MB_CHECK_FOR_UPDATES: "false"
+      JAVA_OPTS: "-Xmx3g"
+    depends_on:
+      postgres:
+        condition: service_healthy

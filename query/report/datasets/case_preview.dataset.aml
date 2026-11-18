@@ -1,0 +1,7 @@
+Dataset case_preview {
+  label: 'Case preview'
+  description: 'What each case of the query benchmark runs, and the first rows of the table it scans. bench_sample is not related to cases: a case\'s columns name which of its columns the case returns.'
+  data_source_name: 'results'
+  models: [cases, bench_sample]
+  relationships: []
+}

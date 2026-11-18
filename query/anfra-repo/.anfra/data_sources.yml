@@ -1,0 +1,10 @@
+# The bench warehouse (docker-compose.yml). Bench-only credentials.
+data_sources:
+  bench_pg:
+    type: postgresql
+    connection:
+      host: 127.0.0.1
+      port: 55432
+      user: bench
+      password: bench
+      dbname: bench
