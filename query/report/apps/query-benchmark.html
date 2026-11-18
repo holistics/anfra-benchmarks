@@ -88,6 +88,10 @@
     .field-group > label, .field-group > .label { font-weight: 500; }
 
     .chart { height: 380px; }
+    .case-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+                 gap: 20px 32px; min-height: 720px; align-content: start; }
+    .case-panel h3 { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px;
+                     line-height: 16px; font-weight: 600; margin: 0 0 4px; }
     .compare-body { display: flex; flex-direction: column; gap: 16px; }
     .picker { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
     .picks { display: flex; flex-wrap: wrap; gap: 8px; }
@@ -204,9 +208,12 @@
     <section class="card" data-anfra-block="by-case" data-anfra-label="Median time by case">
       <header>
         <h2>Median time by case</h2>
-        <p class="caption">Log scale. The bar is the median run; the whisker reaches the slowest. File tools (psql, usql, anfra CLI, each writing a CSV file) and HTTP tools (anfra HTTP, Superset) are not comparable with each other.</p>
+        <p class="caption">One panel per case, each on its own linear scale: compare the tools within a
+          panel, not the panels with each other. A bar is the tool's median run; hover for the slowest.
+          File tools (psql, usql, anfra CLI, each writing a CSV file) and HTTP tools (anfra HTTP,
+          Superset, Metabase) are not comparable with each other.</p>
       </header>
-      <section><div id="by-case" class="chart" data-anfra-query="byCase"></div></section>
+      <section><div id="by-case-grid" class="case-grid" data-anfra-query="byCase"></div></section>
       <div id="by-case-status" class="status"></div>
     </section>
 
@@ -215,7 +222,7 @@
         <h2>Compare tools</h2>
         <p class="caption">Pick the tools to compare. The first is the baseline; every other tool is a
           bar against it, per case. A bar left of 1× is faster than the baseline, right of it slower; its
-          label says by how much. The scale doubles at each step.</p>
+          label says by how much. The scale is linear: a bar twice as long is twice as far from the baseline.</p>
       </header>
       <section class="compare-body">
         <div class="picker">
@@ -365,6 +372,10 @@
     };
     const toolLabel = (tool) => TOOLS[tool]?.label ?? tool;
     const PATH_LABEL = { file: 'CSV file', http: 'HTTP' };
+    const toolWithPath = (tool, path) => {
+      const label = toolLabel(tool), pathLabel = PATH_LABEL[path] ?? path;
+      return label.includes(pathLabel) ? label : `${label} · ${pathLabel}`;
+    };
     const toolColor = (tool, theme) => theme.cat[(TOOLS[tool]?.color ?? 7) - 1];
 
     const ms = new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 });
@@ -375,7 +386,6 @@
       if (n >= 100) return `${Math.round(n)}`;
       return ms.format(n);
     }
-    const axisMs = (n) => (n >= 1000 ? `${n / 1000} s` : `${n} ms`);
     function formatRatio (r) {
       return r < 1 ? `${(1 / r).toFixed(1)}× faster` : `${r.toFixed(1)}× slower`;
     }
@@ -496,7 +506,7 @@
     app.mapControl(runCase, runs, { field: 'runs.case_name' });
     app.mapControl(runResult, runs, { field: 'runs.ok' });
 
-    const byCaseChart = echarts.init(document.getElementById('by-case'));
+    const caseCharts = new Map(); // a case's name → its panel's ECharts instance
     const compareChart = echarts.init(document.getElementById('compare-chart'));
     const logged = new Set();
 
@@ -534,84 +544,66 @@
       return names;
     }
 
-    // The whisker from a bar's top (median) to the slowest run, centred on that bar. ECharts lays out
-    // grouped bars by barCategoryGap and barGap; the same numbers place the whisker.
-    const CATEGORY_GAP = 0.3, BAR_GAP = 0.2;
-    function whiskerSeries (tool, index, count, cases, rows, color) {
-      return {
-        type: 'custom', name: toolLabel(tool), silent: true, z: 3,
-        renderItem: (params, api) => {
-          const caseIndex = api.value(0);
-          const top = api.coord([caseIndex, api.value(1)]);
-          const end = api.coord([caseIndex, api.value(2)]);
-          const band = api.size([1, 0])[0] * (1 - CATEGORY_GAP);
-          const barWidth = band / (count + (count - 1) * BAR_GAP);
-          const x = top[0] - band / 2 + index * barWidth * (1 + BAR_GAP) + barWidth / 2;
-          const cap = Math.min(barWidth * 0.5, 8);
-          const style = { stroke: color, lineWidth: 1.5 };
-          return {
-            type: 'group',
-            children: [
-              { type: 'line', shape: { x1: x, y1: top[1], x2: x, y2: end[1] }, style },
-              { type: 'line', shape: { x1: x - cap / 2, y1: end[1], x2: x + cap / 2, y2: end[1] }, style },
-            ],
-          };
-        },
-        data: cases.map((name, i) => {
-          const row = rows.find((r) => r.case_name === name && r.tool === tool);
-          return row && row.median_ms !== null ? [i, Number(row.median_ms), Number(row.slowest_ms)] : [i, null, null];
-        }),
-      };
-    }
-
+    // One panel per case: a horizontal bar per tool, on the case's own linear scale, so a tool 40×
+    // slower than another looks 40× longer.
     function renderByCase (theme) {
       if (!byCase.result) return;
       const rows = byCase.result.rows;
+      const container = document.getElementById('by-case-grid');
       const cases = caseList(rows);
-      const tools = [];
-      for (const row of rows) if (!tools.includes(row.tool)) tools.push(row.tool);
-      tools.sort((a, b) => Number(rows.find((r) => r.tool === a).tool_order) - Number(rows.find((r) => r.tool === b).tool_order));
-
-      const bars = tools.map((tool) => ({
-        type: 'bar', name: toolLabel(tool), id: `bar-${tool}`,
-        barCategoryGap: `${CATEGORY_GAP * 100}%`, barGap: `${BAR_GAP * 100}%`,
-        itemStyle: { color: toolColor(tool, theme), borderRadius: [3, 3, 0, 0] },
-        data: cases.map((name) => {
-          const row = rows.find((r) => r.case_name === name && r.tool === tool);
-          return row && row.median_ms !== null ? Number(row.median_ms) : null;
-        }),
-      }));
-      const whiskers = tools.map((tool, i) => whiskerSeries(tool, i, tools.length, cases, rows, theme.text));
-
-      byCaseChart.setOption({
-        animation: false,
-        textStyle: { color: theme.text, fontFamily: 'Inter Variable, Inter, system-ui, sans-serif' },
-        legend: { top: 0, data: tools.map(toolLabel), textStyle: { color: theme.text } },
-        grid: { left: 8, right: 16, top: 40, bottom: 8, containLabel: true },
-        tooltip: {
-          trigger: 'axis', axisPointer: { type: 'shadow' },
-          formatter: (items) => {
-            const name = cases[items[0].dataIndex];
-            const lines = tools.map((tool) => {
-              const row = rows.find((r) => r.case_name === name && r.tool === tool);
-              if (!row || row.median_ms === null) return null;
-              return `${toolLabel(tool)}: <b>${formatMs(row.median_ms)} ms</b> (slowest ${formatMs(row.slowest_ms)})`;
-            }).filter(Boolean);
-            return [`<b>${name}</b>`, ...lines].join('<br>');
+      for (const [name, chart] of caseCharts) {
+        if (!cases.includes(name)) { chart.dispose(); caseCharts.delete(name); }
+      }
+      const panels = [];
+      for (const name of cases) {
+        let panel = container.querySelector(`[data-case="${CSS.escape(name)}"]`);
+        if (!panel) {
+          panel = Object.assign(document.createElement('div'), { className: 'case-panel' });
+          panel.dataset.case = name;
+          panel.append(Object.assign(document.createElement('h3'), { textContent: name }), document.createElement('div'));
+          container.append(panel); // on the page before ECharts measures it
+        }
+        panels.push(panel);
+        const caseRows = rows
+          .filter((r) => r.case_name === name && r.median_ms !== null)
+          .sort((a, b) => Number(a.tool_order) - Number(b.tool_order));
+        const chartEl = panel.lastElementChild;
+        chartEl.style.height = `${caseRows.length * 24 + 16}px`;
+        const longest = Math.max(...caseRows.map((r) => Number(r.median_ms)));
+        let chart = caseCharts.get(name);
+        if (!chart) { chart = echarts.init(chartEl); caseCharts.set(name, chart); }
+        chart.resize();
+        chart.setOption({
+          animation: false,
+          textStyle: { color: theme.text, fontFamily: 'Inter Variable, Inter, system-ui, sans-serif' },
+          grid: { left: 4, right: 4, top: 4, bottom: 4, containLabel: true },
+          tooltip: {
+            trigger: 'item',
+            formatter: (p) => {
+              const r = caseRows[p.dataIndex];
+              return `<b>${name}</b>, ${toolLabel(r.tool)}<br>median ${formatMs(r.median_ms)} ms<br>slowest ${formatMs(r.slowest_ms)} ms`;
+            },
           },
-        },
-        xAxis: { type: 'category', data: cases, axisLabel: { color: theme.text, interval: 0 },
-                 axisLine: { lineStyle: { color: theme.grid } } },
-        yAxis: { type: 'log', logBase: 10, name: 'ms', nameTextStyle: { color: theme.text },
-                 axisLabel: { color: theme.text, formatter: axisMs }, splitLine: { lineStyle: { color: theme.grid } } },
-        series: [...bars, ...whiskers],
-      }, { replaceMerge: ['series'] });
+          // Room past the longest bar for its label.
+          xAxis: { type: 'value', min: 0, max: longest * 1.45, show: false },
+          yAxis: { type: 'category', inverse: true, data: caseRows.map((r) => toolLabel(r.tool)),
+                   axisLabel: { color: theme.text, fontSize: 12 }, axisTick: { show: false },
+                   axisLine: { lineStyle: { color: theme.grid } } },
+          series: [{
+            type: 'bar', id: 'median', barWidth: '64%',
+            data: caseRows.map((r) => ({ value: Number(r.median_ms), itemStyle: { color: toolColor(r.tool, theme), borderRadius: [0, 3, 3, 0] } })),
+            label: { show: true, position: 'right', color: theme.text, fontSize: 11,
+                     formatter: (p) => `${formatMs(caseRows[p.dataIndex].median_ms)} ms` },
+          }],
+        }, { replaceMerge: ['series'] });
+      }
+      container.replaceChildren(...panels);
     }
 
-    // A ratio on a doubling scale: log2, so 1× is 0, 2× slower is +1, 4× faster is -2. One axis then
-    // fits a tool 2× off the baseline beside one 30× off.
-    const doubling = (ratio) => Math.log2(ratio);
-    const doublingLabel = (x) => (x === 0 ? '1×' : `${2 ** Math.abs(Math.round(x))}×`);
+    // A ratio as a linear distance from 1×, in "times": 4× slower is +3, 4× faster is -3. A tool 40×
+    // slower than the baseline then sits ten times further out than one 4× slower.
+    const spread = (ratio) => (ratio >= 1 ? ratio - 1 : -(1 / ratio - 1));
+    const spreadLabel = (x) => `${+(Math.abs(x) + 1).toFixed(1)}×`;
 
     // The reader's picks, in order; the first is the baseline. Null until the first result picks the
     // defaults: Superset and Metabase against anfra HTTP as the baseline, or else the first two tools.
@@ -647,7 +639,7 @@
       document.getElementById('picks').replaceChildren(...shown.map((tool, i) => {
         const chip = Object.assign(document.createElement('span'), { className: i === 0 ? 'chip baseline' : 'chip' });
         if (i === 0) chip.append(Object.assign(document.createElement('span'), { className: 'tag', textContent: 'Baseline' }));
-        chip.append(`${toolLabel(tool)} · ${PATH_LABEL[pathOf.get(tool)] ?? pathOf.get(tool)}`);
+        chip.append(toolWithPath(tool, pathOf.get(tool)));
         if (i > 0) {
           const lead = Object.assign(document.createElement('button'), { className: 'btn', type: 'button', textContent: 'Make baseline' });
           lead.dataset.variant = 'ghost';
@@ -673,7 +665,7 @@
           const option = document.createElement('div');
           option.setAttribute('role', 'option');
           option.dataset.value = t.tool;
-          option.textContent = `${toolLabel(t.tool)} · ${PATH_LABEL[t.path] ?? t.path}`;
+          option.textContent = toolWithPath(t.tool, t.path);
           return option;
         }));
         document.getElementById('add-tool-combobox').refresh?.();
@@ -715,15 +707,18 @@
         return t === undefined || b === undefined ? null : t / b;
       };
 
-      const values = others.flatMap((tool) => rows.map((c) => ratio(tool, c.name))).filter((r) => r !== null).map(doubling);
-      const reach = Math.ceil(Math.max(1, ...values.map(Math.abs))) + 1; // a step of room for the labels
+      // The axis fits the data on each side of 1×, with room for the labels; no empty half.
+      const values = others.flatMap((tool) => rows.map((c) => ratio(tool, c.name))).filter((r) => r !== null).map(spread);
+      const slowest = Math.max(0, ...values), fastest = Math.min(0, ...values);
+      const axisMax = slowest > 0 ? slowest * 1.3 : 0.5;
+      const axisMin = fastest < 0 ? fastest * 1.3 : -0.05 * axisMax;
       chartEl.style.height = `${rows.length * (others.length * 18 + 14) + 84}px`;
       compareChart.resize();
       compareChart.setOption({
         animation: false,
         textStyle: { color: theme.text, fontFamily: 'Inter Variable, Inter, system-ui, sans-serif' },
         legend: { top: 0, data: others.map(toolLabel), textStyle: { color: theme.text } },
-        grid: { left: 8, right: 8, top: 56, bottom: 4, containLabel: true }, // room for the baseline's name
+        grid: { left: 8, right: 24, top: 56, bottom: 4, containLabel: true }, // room for the baseline's name
         tooltip: {
           trigger: 'axis', axisPointer: { type: 'shadow' },
           formatter: (items) => {
@@ -736,8 +731,8 @@
             return [`<b>${name}</b>`, `${toolLabel(baseline)}: ${formatMs(medians.get(`${baseline}:${name}`))} ms`, ...lines].join('<br>');
           },
         },
-        xAxis: { type: 'value', min: -reach, max: reach, interval: 1,
-                 axisLabel: { color: theme.text, formatter: doublingLabel },
+        xAxis: { type: 'value', min: axisMin, max: axisMax,
+                 axisLabel: { color: theme.text, formatter: spreadLabel, hideOverlap: true },
                  splitLine: { lineStyle: { color: theme.grid } } },
         yAxis: { type: 'category', data: rows.map((c) => c.name),
                  axisLabel: { color: theme.text, fontSize: 12 }, axisTick: { show: false }, axisLine: { show: false } },
@@ -747,7 +742,7 @@
           data: rows.map((c) => {
             const r = ratio(tool, c.name);
             if (r === null) return null;
-            const v = doubling(r);
+            const v = spread(r);
             return { value: v, itemStyle: { borderRadius: v < 0 ? [3, 0, 0, 3] : [0, 3, 3, 0] },
                      label: { position: v < 0 ? 'left' : 'right' } };
           }),
@@ -939,7 +934,7 @@
 
     app.subscribe(render);
     darkQuery.addEventListener('change', () => { applyTheme(); render(); });
-    window.addEventListener('resize', () => { byCaseChart.resize(); compareChart.resize(); });
+    window.addEventListener('resize', () => { for (const chart of caseCharts.values()) chart.resize(); compareChart.resize(); });
 
     // Runs: more pages, and the result switch (all, ok, failed).
     document.getElementById('runs-more').addEventListener('click', async (event) => {
