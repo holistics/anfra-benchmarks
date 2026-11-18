@@ -47,7 +47,7 @@ func report(args []string) error {
 		return err
 	}
 
-	toolOrder := []string{"psql", "usql", "anfra-cli-cold", "anfra-cli-warm", "anfra-http", "superset", "metabase"}
+	toolOrder := []string{"psql", "clickhouse-client", "usql", "anfra-cli-cold", "anfra-cli-warm", "anfra-http", "superset", "metabase"}
 	present := map[string]bool{}
 	for k := range times {
 		present[k.tool] = true
