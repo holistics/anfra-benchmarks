@@ -1,0 +1,35 @@
+# The warehouses the benchmark measures. Copy to data_sources.yml (git-ignored) and fill in
+# bench_sf: the Snowflake setup and the runner read its connection from there too, so every tool
+# reaches Snowflake as the same user. bench_pg and bench_ch are the local Docker ones
+# (docker-compose.yml), with bench-only credentials: leave them as they are.
+data_sources:
+  bench_pg:
+    type: postgresql
+    connection:
+      host: 127.0.0.1
+      port: 55432
+      user: bench
+      password: bench
+      dbname: bench
+  # The bench ClickHouse (docker-compose.yml), on its native protocol. Bench-only credentials.
+  bench_ch:
+    type: clickhouse
+    connection:
+      host: 127.0.0.1
+      port: 59000
+      user: bench
+      password: bench
+      dbname: bench
+  # Snowflake, for the Snowflake batch. anfra's keys (no role or schema key): the user's default role
+  # must be able to use the warehouse and the database, and queries run in its PUBLIC schema. Use a
+  # service user made for the benchmark; the setup turns its result cache off.
+  bench_sf:
+    type: snowflake
+    connection:
+      host: <account>.snowflakecomputing.com   # the full account host, such as xy12345.ap-southeast-1.snowflakecomputing.com
+      port: 443
+      user: <user>
+      password: <password>                    # a password, or a programmatic access token
+      # private_key: |                        # or an unencrypted PKCS#8 key (-----BEGIN PRIVATE KEY-----), as text
+      dbname: BENCH                           # the setup creates it, and bench_wide in its PUBLIC schema
+      warehouse: BENCH_XS                     # an X-Small made for the benchmark, auto-suspending after 60 s
