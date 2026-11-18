@@ -55,3 +55,25 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+
+  # ClickHouse, its bench_wide copied from Postgres on first start (init.sql).
+  # Native protocol on 59000 (clickhouse-client, usql, anfra), HTTP on 58123
+  # (Superset, Metabase). Times in UTC, as in Postgres.
+  clickhouse:
+    image: clickhouse/clickhouse-server:26.8.39.19
+    environment:
+      CLICKHOUSE_DB: bench
+      CLICKHOUSE_USER: bench
+      CLICKHOUSE_PASSWORD: bench
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: "1"
+      TZ: UTC
+    ports:
+      - "127.0.0.1:59000:9000"
+      - "127.0.0.1:58123:8123"
+    volumes:
+      - ./clickhouse/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    ulimits:
+      nofile: { soft: 262144, hard: 262144 }
+    depends_on:
+      postgres:
+        condition: service_healthy

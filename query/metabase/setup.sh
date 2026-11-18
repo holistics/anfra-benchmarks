@@ -21,15 +21,26 @@ fi
 session=$(curl -sf -X POST "$MB/api/session" -H 'Content-Type: application/json' \
   -d "{\"username\": \"$EMAIL\", \"password\": \"$PASSWORD\"}" | json 'd["id"]')
 
-existing=$(curl -sf "$MB/api/database" -H "X-Metabase-Session: $session" \
-  | json '[x["id"] for x in d["data"] if x["name"] == "bench_pg"]')
-if [ "$existing" = "[]" ]; then
-  # is_full_sync false: sync the schema only, with no scans of the table's values, which would
-  # otherwise run in the background while the benchmark measures.
-  curl -sf -X POST "$MB/api/database" -H "X-Metabase-Session: $session" -H 'Content-Type: application/json' -d '{
-    "engine": "postgres", "name": "bench_pg", "is_full_sync": false, "is_on_demand": false,
-    "details": {"host": "127.0.0.1", "port": 55432, "dbname": "bench", "user": "bench", "password": "bench", "ssl": false}
-  }' | json '"Metabase: database bench_pg added, id " + str(d["id"])'
-else
-  echo "Metabase: database bench_pg exists, id $existing"
-fi
+# add_database NAME JSON: adds the database unless one of that name exists.
+add_database() {
+  existing=$(curl -sf "$MB/api/database" -H "X-Metabase-Session: $session" \
+    | json "[x['id'] for x in d['data'] if x['name'] == '$1']")
+  if [ "$existing" = "[]" ]; then
+    curl -sf -X POST "$MB/api/database" -H "X-Metabase-Session: $session" -H 'Content-Type: application/json' -d "$2" \
+      | json '"Metabase: database " + d["name"] + " added, id " + str(d["id"])'
+  else
+    echo "Metabase: database $1 exists, id $existing"
+  fi
+}
+
+# is_full_sync false: sync the schema only, with no scans of the tables' values, which would
+# otherwise run in the background while the benchmark measures.
+add_database bench_pg '{
+  "engine": "postgres", "name": "bench_pg", "is_full_sync": false, "is_on_demand": false,
+  "details": {"host": "127.0.0.1", "port": 55432, "dbname": "bench", "user": "bench", "password": "bench", "ssl": false}
+}'
+# ClickHouse's Metabase driver speaks its HTTP protocol.
+add_database bench_ch '{
+  "engine": "clickhouse", "name": "bench_ch", "is_full_sync": false, "is_on_demand": false,
+  "details": {"host": "127.0.0.1", "port": 58123, "dbname": "bench", "user": "bench", "password": "bench", "ssl": false}
+}'

@@ -8,3 +8,12 @@ data_sources:
       user: bench
       password: bench
       dbname: bench
+  # The bench ClickHouse (docker-compose.yml), on its native protocol. Bench-only credentials.
+  bench_ch:
+    type: clickhouse
+    connection:
+      host: 127.0.0.1
+      port: 59000
+      user: bench
+      password: bench
+      dbname: bench

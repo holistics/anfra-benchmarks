@@ -72,7 +72,8 @@ func measure(ctx context.Context) error {
 		batch    = flag.Int("batch", 1, "the batch number recorded with each run")
 		rounds   = flag.Int("rounds", 5, "measured rounds")
 		warmup   = flag.Int("warmup", 1, "unrecorded rounds before them")
-		toolList = flag.String("tools", "psql,usql,anfra-cli-cold,anfra-cli-warm,anfra-http,superset,metabase", "the tools to run")
+		dbName   = flag.String("db", "postgres", "the warehouse: postgres or clickhouse")
+		toolList = flag.String("tools", "native,usql,anfra-cli-cold,anfra-cli-warm,anfra-http,superset,metabase", "the tools to run; native is the warehouse's own CLI")
 		caseList = flag.String("cases", "", "the cases to run, all by default")
 		skipList = flag.String("skip", "", "tool:case cells not to run")
 		addr     = flag.String("anfra-addr", "127.0.0.1:58090", "where to run anfra serve")
@@ -98,15 +99,22 @@ func measure(ctx context.Context) error {
 		skip[cell] = cell != ""
 	}
 
+	wh, ok := warehouses[*dbName]
+	if !ok {
+		return fmt.Errorf("no warehouse %q: use postgres or clickhouse", *dbName)
+	}
 	warmRepo := filepath.Join(bench, "anfra-repo")
 	tools := map[string]func() (tool, error){
-		"psql":           func() (tool, error) { return psqlTool(), nil },
-		"usql":           func() (tool, error) { return usqlTool(filepath.Join(bench, ".bin", "usql")), nil },
-		"anfra-cli-cold": func() (tool, error) { d, err := coldRepo(warmRepo); return anfraCLITool("anfra-cli-cold", d), err },
-		"anfra-cli-warm": func() (tool, error) { return anfraCLITool("anfra-cli-warm", warmRepo), nil },
-		"anfra-http":     func() (tool, error) { return anfraHTTPTool{base: "http://" + *addr}, nil },
-		"superset":       func() (tool, error) { return newSupersetTool(ctx, *superset) },
-		"metabase":       func() (tool, error) { return newMetabaseTool(ctx, *metabase) },
+		"native": func() (tool, error) { return wh.nativeCL(bench), nil },
+		"usql":   func() (tool, error) { return usqlTool(filepath.Join(bench, ".bin", "usql"), wh.USQLDSN), nil },
+		"anfra-cli-cold": func() (tool, error) {
+			d, err := coldRepo(warmRepo)
+			return anfraCLITool("anfra-cli-cold", d, wh.Source), err
+		},
+		"anfra-cli-warm": func() (tool, error) { return anfraCLITool("anfra-cli-warm", warmRepo, wh.Source), nil },
+		"anfra-http":     func() (tool, error) { return anfraHTTPTool{base: "http://" + *addr, source: wh.Source}, nil },
+		"superset":       func() (tool, error) { return newSupersetTool(ctx, *superset, wh.Source) },
+		"metabase":       func() (tool, error) { return newMetabaseTool(ctx, *metabase, wh.Source) },
 	}
 	var chosen []tool
 	needServer := false
@@ -158,7 +166,7 @@ func measure(ctx context.Context) error {
 				return ctx.Err()
 			}
 			took, s, err := x.t.Run(ctx, x.c)
-			r := run{Batch: *batch, DB: "postgres", Tool: x.t.Name(), Path: x.t.Path(), Case: x.c.Name,
+			r := run{Batch: *batch, DB: wh.Name, Tool: x.t.Name(), Path: x.t.Path(), Case: x.c.Name,
 				Round: round, Ms: float64(took.Microseconds()) / 1000, shape: s}
 			switch {
 			case err != nil:

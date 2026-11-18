@@ -170,19 +170,6 @@
         </div>
       </div>
 
-      <div class="field-group" data-anfra-block="batch-picker" data-anfra-label="Batch" data-anfra-control="batch">
-        <label for="batch-input">Batch</label>
-        <div id="batch-combobox" class="combobox" style="width: 120px" data-auto-highlight="true">
-          <input id="batch-input" type="text" role="combobox" placeholder="Batch" autocomplete="off"
-                 autocorrect="off" spellcheck="false" aria-autocomplete="list" aria-expanded="false"
-                 aria-controls="batch-listbox">
-          <div data-popover aria-hidden="true">
-            <div role="listbox" id="batch-listbox" aria-orientation="vertical" data-empty="No batches."></div>
-          </div>
-          <input type="hidden" name="batch" value="">
-        </div>
-      </div>
-
       <div class="field-group" data-anfra-block="db-picker" data-anfra-label="Warehouse" data-anfra-control="db">
         <label for="db-input">Warehouse</label>
         <div id="db-combobox" class="combobox" style="width: 160px" data-auto-highlight="true">
@@ -193,6 +180,19 @@
             <div role="listbox" id="db-listbox" aria-orientation="vertical" data-empty="No warehouses."></div>
           </div>
           <input type="hidden" name="db" value="">
+        </div>
+      </div>
+
+      <div class="field-group" data-anfra-block="batch-picker" data-anfra-label="Batch" data-anfra-control="batch">
+        <label for="batch-input">Batch</label>
+        <div id="batch-combobox" class="combobox" style="width: 120px" data-auto-highlight="true">
+          <input id="batch-input" type="text" role="combobox" placeholder="Batch" autocomplete="off"
+                 autocorrect="off" spellcheck="false" aria-autocomplete="list" aria-expanded="false"
+                 aria-controls="batch-listbox">
+          <div data-popover aria-hidden="true">
+            <div role="listbox" id="batch-listbox" aria-orientation="vertical" data-empty="No batches."></div>
+          </div>
+          <input type="hidden" name="batch" value="">
         </div>
       </div>
 
@@ -1008,41 +1008,94 @@
       ? new Promise((resolve) => document.addEventListener('DOMContentLoaded', resolve))
       : Promise.resolve();
 
-    async function setUpPicker (filter, id, pick) {
-      const [options] = await Promise.all([filter.loadOptions(), domReady]);
-      const values = options.map(String);
-      const box = document.getElementById(`${id}-combobox`);
-      document.getElementById(`${id}-listbox`).replaceChildren(...values.map((value) => {
-        const option = document.createElement('div');
-        option.setAttribute('role', 'option');
-        option.dataset.value = value;
-        option.textContent = value;
-        return option;
-      }));
-      box.refresh();
-      const start = pick(values);
-      if (start !== undefined) {
-        box.setValue(start);
-        filter.setCondition({ operator: 'is', values: [start] });
+    // Machine, batch and warehouse: single-select comboboxes whose options come from the runs
+    // themselves, so a new results file shows up on the next load. They cascade: the warehouses are
+    // the chosen machine's, the batches the chosen warehouse's. Each starts on, or falls back to, a
+    // default: the first machine, Postgres if it has runs, that warehouse's newest batch.
+    //
+    // The scopes run in an app of their own, so the main app runs nothing until the pickers are set:
+    // a query without them would mix every batch's runs.
+    const scopesApp = Anfra.createApp({ title: 'Query benchmark scopes' });
+    const scopes = scopesApp.createQuery('scopes', {
+      dataset: DATASET,
+      aql: `
+        explore {
+          dimensions { machine: runs.machine, batch: runs.batch, db: runs.db }
+          measures { run_count: runs.ok_runs }
+          sorts { machine asc, batch asc, db asc }
+        }
+      `,
+    });
+
+    const SCOPE_PICKERS = [
+      { filter: machine, id: 'machine', options: (rows) => rows.map((r) => r.machine),
+        fallback: (values) => values[0] },
+      { filter: db, id: 'db', options: (rows, picked) => rows.filter((r) => r.machine === picked.machine).map((r) => r.db),
+        fallback: (values) => (values.includes('postgres') ? 'postgres' : values[0]) },
+      { filter: batch, id: 'batch', options: (rows, picked) => rows.filter((r) => r.machine === picked.machine && r.db === picked.db).map((r) => r.batch),
+        fallback: (values) => [...values].sort((a, b) => Number(b) - Number(a))[0] },
+    ];
+    let scopesReady = false;
+
+    // Settles each picker on a value its scope has, top-down, and says whether any changed.
+    function settleScopes () {
+      const rows = (scopes.result?.rows ?? []).map((r) => ({ machine: String(r.machine), batch: String(r.batch), db: String(r.db) }));
+      const picked = {};
+      let changed = false;
+      for (const picker of SCOPE_PICKERS) {
+        const values = [...new Set(picker.options(rows, picked))];
+        const current = picker.filter.condition?.values?.[0];
+        const value = values.includes(String(current)) ? String(current) : picker.fallback(values);
+        picked[picker.id] = value;
+
+        const list = document.getElementById(`${picker.id}-listbox`);
+        const box = document.getElementById(`${picker.id}-combobox`);
+        if (list.dataset.key !== values.join(',')) {
+          list.dataset.key = values.join(',');
+          list.replaceChildren(...values.map((v) => {
+            const option = document.createElement('div');
+            option.setAttribute('role', 'option');
+            option.dataset.value = v;
+            option.textContent = v;
+            return option;
+          }));
+          box.refresh?.();
+        }
+        if (value !== undefined && String(current) !== value) {
+          picker.filter.setCondition({ operator: 'is', values: [value] });
+          changed = true;
+        }
+        if (value !== undefined && box.dataset.shown !== value) {
+          box.dataset.shown = value;
+          box.setValue?.(value);
+        }
       }
-      box.addEventListener('change', (event) => {
+      return changed;
+    }
+
+    scopesApp.subscribe(() => {
+      if (scopes.state === 'error') console.error('Could not load the machines, batches and warehouses', scopes.error);
+      if (scopes.state !== 'success') return;
+      settleScopes();
+      if (!scopesReady) { scopesReady = true; app.execute(); }
+    });
+
+    for (const picker of SCOPE_PICKERS) {
+      document.getElementById(`${picker.id}-combobox`).addEventListener('change', (event) => {
         const value = event.detail.value;
-        if (!value) return;
-        filter.setCondition({ operator: 'is', values: [String(value)] });
-        app.execute();
+        if (!value || String(value) === String(picker.filter.condition?.values?.[0])) return;
+        picker.filter.setCondition({ operator: 'is', values: [String(value)] });
+        document.getElementById(`${picker.id}-combobox`).dataset.shown = String(value);
+        settleScopes(); // the pickers below it may have to move
+        if (scopesReady) app.execute();
       });
     }
 
-    const first = (values) => values[0];
-    const latest = (values) => [...values].sort((a, b) => Number(b) - Number(a))[0];
+    domReady.then(() => scopesApp.execute());
     Promise.all([
-      setUpPicker(machine, 'machine', first),
-      setUpPicker(batch, 'batch', latest),
-      setUpPicker(db, 'db', (values) => (values.includes('postgres') ? 'postgres' : values[0])),
       setUpMultiPicker(runTool, 'run-tool', toolLabel),
       setUpMultiPicker(runCase, 'run-case', (value) => value),
-    ]).catch((err) => console.error('Could not load the pickers', err))
-      .finally(() => app.execute());
+    ]).catch((err) => console.error('Could not load the run filters', err));
   </script>
 </body>
 </html>

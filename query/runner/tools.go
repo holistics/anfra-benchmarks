@@ -90,8 +90,6 @@ func csvShape(path string) (shape, error) {
 	}
 }
 
-const pgDSN = "postgres://bench:bench@127.0.0.1:55432/bench?sslmode=disable"
-
 func psqlTool() tool {
 	return cliTool{
 		name: "psql",
@@ -102,23 +100,35 @@ func psqlTool() tool {
 	}
 }
 
-func usqlTool(bin string) tool {
+// clickhouseClientTool is ClickHouse's own client, writing the result to a file
+// itself (INTO OUTFILE), as CSV with a header row.
+func clickhouseClientTool(bin string) tool {
+	return cliTool{
+		name: "clickhouse-client",
+		argv: func(sql, out string) []string {
+			return []string{bin, "client", "--host", "127.0.0.1", "--port", "59000", "--user", "bench", "--password", "bench",
+				"--database", "bench", "--query", fmt.Sprintf("%s INTO OUTFILE '%s' TRUNCATE FORMAT CSVWithNames", sql, out)}
+		},
+	}
+}
+
+func usqlTool(bin, dsn string) tool {
 	return cliTool{
 		name: "usql",
 		argv: func(sql, out string) []string {
-			return []string{bin, "-X", "-q", "--csv", "-o", out, "-c", sql, pgDSN}
+			return []string{bin, "-X", "-q", "--csv", "-o", out, "-c", sql, dsn}
 		},
 	}
 }
 
 // anfraCLITool is `anfra query export`, in repoDir: cold when no server runs
 // for that repo, warm (forwarded to it) when one does.
-func anfraCLITool(name, repoDir string) tool {
+func anfraCLITool(name, repoDir, source string) tool {
 	return cliTool{
 		name: name,
 		dir:  repoDir,
 		argv: func(sql, out string) []string {
-			return []string{"anfra", "--non-interactive", "query", "export", "--lang", "sql", "-s", "bench_pg",
+			return []string{"anfra", "--non-interactive", "query", "export", "--lang", "sql", "-s", source,
 				"--cache.duration", "0s", "--format-options.header", "names", "-o", out, sql}
 		},
 	}
@@ -130,14 +140,14 @@ var httpClient = &http.Client{Timeout: 10 * time.Minute}
 
 // anfraHTTPTool is core.query on anfra serve, streamed as NDJSON, as the SDK
 // (and so a Data App) asks for it.
-type anfraHTTPTool struct{ base string }
+type anfraHTTPTool struct{ base, source string }
 
 func (anfraHTTPTool) Name() string { return "anfra-http" }
 func (anfraHTTPTool) Path() string { return "http" }
 
 func (t anfraHTTPTool) Run(ctx context.Context, c benchCase) (time.Duration, shape, error) {
 	body, _ := json.Marshal(map[string]any{
-		"query": c.SQL, "lang": "sql", "data_source": "bench_pg",
+		"query": c.SQL, "lang": "sql", "data_source": t.source,
 		"cache": map[string]any{"duration": "0s"},
 	})
 	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, t.base+"/api/core.query", bytes.NewReader(body))
@@ -204,7 +214,7 @@ func supersetClientID() string {
 	return "b" + id
 }
 
-func newSupersetTool(ctx context.Context, base string) (*supersetTool, error) {
+func newSupersetTool(ctx context.Context, base, database string) (*supersetTool, error) {
 	body := `{"username":"admin","password":"admin","provider":"db","refresh":false}`
 	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, base+"/api/v1/security/login", bytes.NewReader([]byte(body)))
 	req.Header.Set("Content-Type", "application/json")
@@ -219,7 +229,22 @@ func newSupersetTool(ctx context.Context, base string) (*supersetTool, error) {
 	if err := json.NewDecoder(resp.Body).Decode(&login); err != nil || login.AccessToken == "" {
 		return nil, fmt.Errorf("logging in to Superset: HTTP %d, %v", resp.StatusCode, err)
 	}
-	return &supersetTool{base: base, databaseID: 1, token: login.AccessToken}, nil
+	var databases struct {
+		Result []struct {
+			ID   int    `json:"id"`
+			Name string `json:"database_name"`
+		} `json:"result"`
+	}
+	header := map[string]string{"Authorization": "Bearer " + login.AccessToken}
+	if err := callJSON(ctx, http.MethodGet, base+"/api/v1/database/", "", header, &databases); err != nil {
+		return nil, fmt.Errorf("listing Superset's databases: %w", err)
+	}
+	for _, d := range databases.Result {
+		if d.Name == database {
+			return &supersetTool{base: base, databaseID: d.ID, token: login.AccessToken}, nil
+		}
+	}
+	return nil, fmt.Errorf("Superset has no database %s: see superset/start.sh", database)
 }
 
 func (*supersetTool) Name() string { return "superset" }
@@ -264,7 +289,7 @@ type metabaseTool struct {
 	session    string
 }
 
-func newMetabaseTool(ctx context.Context, base string) (*metabaseTool, error) {
+func newMetabaseTool(ctx context.Context, base, database string) (*metabaseTool, error) {
 	body := `{"username":"admin@bench.invalid","password":"bench-Metabase-1"}`
 	var login struct {
 		ID string `json:"id"`
@@ -283,11 +308,11 @@ func newMetabaseTool(ctx context.Context, base string) (*metabaseTool, error) {
 		return nil, fmt.Errorf("listing Metabase's databases: %w", err)
 	}
 	for _, d := range databases.Data {
-		if d.Name == "bench_pg" {
+		if d.Name == database {
 			return &metabaseTool{base: base, databaseID: d.ID, session: login.ID}, nil
 		}
 	}
-	return nil, fmt.Errorf("Metabase has no database bench_pg: run metabase/setup.sh")
+	return nil, fmt.Errorf("Metabase has no database %s: run metabase/setup.sh", database)
 }
 
 func (*metabaseTool) Name() string { return "metabase" }

@@ -21,8 +21,9 @@ how to run a batch yourself.
 |---|---|---|---|
 | 1 | Postgres | psql, usql, anfra (CLI cold, CLI warm, HTTP), Superset | [batch1.md](results/linux-ryzen7-7840u/batch1.md) |
 | 2 | Postgres | psql, usql, anfra (CLI cold, CLI warm, HTTP), Superset, **Metabase** | [batch2.md](results/linux-ryzen7-7840u/batch2.md) |
+| 3 | ClickHouse | clickhouse-client, usql, anfra (CLI cold, CLI warm, HTTP), Superset, Metabase | [batch3.md](results/linux-ryzen7-7840u/batch3.md) |
 
-Both ran on one machine, `linux-ryzen7-7840u` (AMD Ryzen 7 PRO 7840U, 27 GiB,
+All ran on one machine, `linux-ryzen7-7840u` (AMD Ryzen 7 PRO 7840U, 27 GiB,
 Linux).
 
 ## Viewing the results
@@ -39,7 +40,8 @@ Three ways, from quickest to most detailed. None needs Docker or a warehouse.
    anfra serve          # then open the address it prints, at /apps/query-benchmark
    ```
 
-   Pick a machine, a batch (the newest by default) and a warehouse, and switch
+   Pick a machine, a warehouse (Postgres by default) and one of its batches
+   (its newest by default), and switch
    the file and HTTP paths on or off. The page shows each tool's median per
    case, a comparison of the tools you pick against a baseline (Superset and
    Metabase against anfra HTTP by default), every tool and case in a table, every
@@ -105,6 +107,7 @@ query/
 ├── runner/              the Go program that runs the tools, times them and checks their results
 ├── docker-compose.yml   the warehouse and the tools that run as servers
 ├── postgres/            init.sql: generates the table every case scans
+├── clickhouse/          init.sql: the same table in ClickHouse, copied from Postgres
 ├── superset/            Superset's image, start script and config
 ├── metabase/            setup.sh: Metabase's first-run setup
 └── anfra-repo/          the anfra repo under test: one data source, no models
@@ -162,21 +165,18 @@ For the semantic group, anfra runs AQL on both paths.
 | Tool | Postgres | ClickHouse | Snowflake |
 |---|---|---|---|
 | native CLI | ✅ psql | ✅ clickhouse-client | ✅ snow (or snowsql) |
-| usql | ✅ | ✅ ² | ✅ ² |
+| usql | ✅ | ✅ built with `-tags clickhouse` | ✅ ² |
 | **anfra** | ✅ | ✅ | ✅ |
 | Superset | ✅ | ✅ | ✅ |
-| Metabase | ✅ | ✅ ³ | ✅ |
+| Metabase | ✅ | ✅ built-in driver | ✅ |
 | Cube | ✅ | ✅ | ✅ |
 | MetricFlow | ✅ | ✗ no adapter | ✅ |
-| Rill | ✗ not a query engine | ✅ live ⁴ | ✅ live ⁴ |
+| Rill | ✗ not a query engine | ✅ live ³ | ✅ live ³ |
 
 1. Cube's SQL API speaks the Postgres protocol, so psql can write its result to
    a CSV file. Optional: without it, Cube is HTTP only.
-2. usql's release builds may lack the ClickHouse and Snowflake drivers: build it
-   with their tags.
-3. To confirm: whether Metabase bundles its ClickHouse driver, or it has to be
-   added.
-4. Rill by default copies data into its own engine (DuckDB) and queries the
+2. usql needs its Snowflake driver built in, with `-tags snowflake`.
+3. Rill by default copies data into its own engine (DuckDB) and queries the
    copy. Run live, it queries the warehouse itself, as every other tool here
    does. Only the live mode is comparable. To confirm: that the Rill release
    used runs live on Snowflake (older releases only copied from it).
@@ -264,8 +264,8 @@ run's floor.
 |---|---|---|---|---|---|
 | **1** | ✅ done | Postgres | psql, usql, anfra (cold, warm, HTTP), Superset | 6 × 9 = 54 | 6 min |
 | **2** | ✅ done | Postgres | + Metabase: the full Postgres SQL run | 7 × 9 = 63 | 7 min |
-| **3** | next | ClickHouse | clickhouse-client, usql, anfra ×3, Superset, Metabase | 7 × 9 = 63 | ~10 min |
-| **4** | | Snowflake | snow, usql, anfra ×3, Superset, Metabase | 7 × 5 = 35 | ~15 min, a few credits |
+| **3** | ✅ done | ClickHouse | clickhouse-client, usql, anfra ×3, Superset, Metabase | 7 × 9 = 63 | ~10 min |
+| **4** | next | Snowflake | snow, usql, anfra ×3, Superset, Metabase | 7 × 5 = 35 | ~15 min, a few credits |
 | **5** | | Postgres | semantic: anfra, Cube, MetricFlow | 3 tools × 6 cases × 2 (compile, end to end) = 36 | ~10 min |
 | **6** | | ClickHouse | semantic: anfra, Cube, Rill | 36 | ~10 min |
 | **7** | | Snowflake | semantic: anfra, Cube, MetricFlow, Rill | 4 × 6 × 2 = 48 | ~15 min, a few credits |
@@ -280,12 +280,12 @@ their own, with no measurement.
 ## Runner work, by batch
 
 - ✅ **Batch 2:** a Metabase adapter, and Metabase in the compose file.
-- **Before batch 3:** resume, not done yet. On start, the runner would read its
+- ✅ **Batch 3:** the warehouse as a runner setting (`-db`), ClickHouse with
+  `bench_wide` copied from Postgres, and each tool's ClickHouse connection.
+- **Resume**, not done yet. On start, the runner would read its
   results file and run only the cells short of their rounds, so a run can be
   stopped (Ctrl-C) and continued. Warm-ups run again on resume, since
   processes restart cold.
-- **Batch 3:** the warehouse as a runner setting (connection, data source,
-  native CLI), and ClickHouse with `bench_wide` loaded the same.
 - **Batch 4:** Snowflake credentials from the environment, never in the repo;
   the subset of cases.
 - **Batch 5:** semantic cases (a query per tool per case), compile-only
