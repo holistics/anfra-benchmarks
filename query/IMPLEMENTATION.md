@@ -14,7 +14,7 @@ and how to run a batch.
 | `metabase/` | `setup.sh`: Metabase's first-run setup (an admin, then the bench Postgres), safe to rerun |
 | `cases/` | for the report: the cases (`cases.jsonl`, from `.bin/runner cases`) and the first 20 rows of `bench_wide` (`bench_wide_head.csv`, from psql); regenerate both when the cases or `init.sql` change |
 | `report/` | an anfra repo that reads `results/` and `cases/` with DuckDB, and charts them in a Data App (`report/apps/query-benchmark.html`); run `anfra serve` in it |
-| `anfra-repo/` | the anfra repo the runner serves and queries: a data source per warehouse (`bench_pg`, `bench_ch`), no query cache |
+| `anfra-repo/` | the anfra repo the runner serves and queries: a data source per warehouse (`bench_pg`, `bench_ch`, `bench_sf`), no query cache. Its `data_sources.yml` holds credentials and is git-ignored: copy `data_sources.yml.example` and fill in Snowflake. Every tool's Snowflake connection is read from it |
 | `runner/` | the Go runner (its own module, stdlib only): the cases, a driver per tool, the report |
 | `results/<machine>/` | each machine's batches: runs (`batch<N>.jsonl`), write-up (`batch<N>.md`), and the run's log and `anfra serve` log (not committed) |
 

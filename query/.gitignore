@@ -2,3 +2,5 @@
 .bin/
 # Per-run logs
 results/**/*.log
+# Credentials: copy data_sources.yml.example and fill in Snowflake
+anfra-repo/.anfra/data_sources.yml
