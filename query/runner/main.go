@@ -72,7 +72,7 @@ func measure(ctx context.Context) error {
 		batch    = flag.Int("batch", 1, "the batch number recorded with each run")
 		rounds   = flag.Int("rounds", 5, "measured rounds")
 		warmup   = flag.Int("warmup", 1, "unrecorded rounds before them")
-		dbName   = flag.String("db", "postgres", "the warehouse: postgres or clickhouse")
+		dbName   = flag.String("db", "postgres", "the warehouse: postgres, clickhouse or snowflake")
 		toolList = flag.String("tools", "native,usql,anfra-cli-cold,anfra-cli-warm,anfra-http,superset,metabase", "the tools to run; native is the warehouse's own CLI")
 		caseList = flag.String("cases", "", "the cases to run, all by default")
 		skipList = flag.String("skip", "", "tool:case cells not to run")
@@ -99,9 +99,9 @@ func measure(ctx context.Context) error {
 		skip[cell] = cell != ""
 	}
 
-	wh, ok := warehouses[*dbName]
-	if !ok {
-		return fmt.Errorf("no warehouse %q: use postgres or clickhouse", *dbName)
+	wh, err := loadWarehouse(*dbName, bench)
+	if err != nil {
+		return err
 	}
 	warmRepo := filepath.Join(bench, "anfra-repo")
 	tools := map[string]func() (tool, error){
@@ -153,7 +153,7 @@ func measure(ctx context.Context) error {
 	for _, t := range chosen {
 		for _, c := range cases {
 			if !skip[t.Name()+":"+c.Name] {
-				cells = append(cells, cell{t, c})
+				cells = append(cells, cell{t, c.on(wh)})
 			}
 		}
 	}
