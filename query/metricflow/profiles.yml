@@ -1,6 +1,7 @@
-# The benchmark Postgres (docker-compose.yml). Bench-only credentials.
+# The benchmark warehouses (docker-compose.yml): Postgres by default, ClickHouse with DBT_TARGET=ch.
+# Bench-only credentials.
 bench:
-  target: bench
+  target: "{{ env_var('DBT_TARGET', 'bench') }}"
   outputs:
     bench:
       type: postgres
@@ -9,5 +10,13 @@ bench:
       user: bench
       password: bench
       dbname: bench
+      schema: mf
+      threads: 1
+    ch:
+      type: clickhouse
+      host: 127.0.0.1
+      port: 58123
+      user: bench
+      password: bench
       schema: mf
       threads: 1

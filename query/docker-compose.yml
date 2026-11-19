@@ -106,3 +106,28 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+
+  # Cube on ClickHouse, for the semantic group on ClickHouse: the same model (cube/model), the same
+  # settings as cube, on 127.0.0.1:58101, reaching ClickHouse over HTTP (58123).
+  cube-ch:
+    image: cubejs/cube:v1.8.28
+    network_mode: host
+    environment:
+      PORT: "58101"
+      CUBEJS_DEV_MODE: "false"
+      CUBEJS_API_SECRET: bench-only-not-a-secret
+      CUBEJS_DB_TYPE: clickhouse
+      CUBEJS_DB_HOST: 127.0.0.1
+      CUBEJS_DB_PORT: "58123"
+      CUBEJS_DB_NAME: bench
+      CUBEJS_DB_USER: bench
+      CUBEJS_DB_PASS: bench
+      CUBEJS_CACHE_AND_QUEUE_DRIVER: memory
+      CUBEJS_DB_QUERY_LIMIT: "1000000"
+      CUBEJS_TELEMETRY: "false"
+      CUBEJS_LOG_LEVEL: warn
+    volumes:
+      - ./cube/model:/cube/conf/model:ro
+    depends_on:
+      clickhouse:
+        condition: service_started

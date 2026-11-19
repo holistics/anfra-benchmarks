@@ -28,9 +28,6 @@ var semanticCaseNames = []string{
 	"list_1k", "list_10k", "list_100k", "list_1m", "list_100k_medium", "list_100k_wide",
 }
 
-// semanticDataset is the anfra dataset the semantic cases' AQL runs on.
-const semanticDataset = "tpch"
-
 // semanticCase is a semantic case in each tool's language, the answer every
 // tool must return, and the tools that don't run it, each with why.
 type semanticCase struct {
@@ -198,14 +195,14 @@ func textRow(values []any) []string {
 
 // --- MetricFlow: the CLI, a new Python process each call. ----------------------
 
-// metricflowTool is `mf query`, in the dbt project (metricflow/), writing the
-// result to a CSV file.
-func metricflowTool(bench string) tool {
+// metricflowTool is `mf query`, in the warehouse's dbt project (metricflow/,
+// metricflow-ch/), writing the result to a CSV file.
+func metricflowTool(bench string, w warehouse) tool {
 	return cliTool{
 		name: "metricflow",
-		dir:  filepath.Join(bench, "metricflow"),
+		dir:  filepath.Join(bench, w.MFProject),
 		// No usage tracking, as for every other tool (see metricflow/dbt_project.yml).
-		env: []string{"DBT_PROFILES_DIR=.", "DBT_SEND_ANONYMOUS_USAGE_STATS=false", "DO_NOT_TRACK=1"},
+		env: []string{"DBT_PROFILES_DIR=.", "DBT_TARGET=" + w.MFTarget, "DBT_SEND_ANONYMOUS_USAGE_STATS=false", "DO_NOT_TRACK=1"},
 		argv: func(c benchCase, out string) []string {
 			argv := []string{filepath.Join(bench, ".bin", "mf-venv", "bin", "mf"), "query", "--quiet"}
 			argv = append(argv, c.Semantic.MFArgs...)

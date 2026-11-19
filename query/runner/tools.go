@@ -146,14 +146,14 @@ func usqlTool(bin, dsn string) tool {
 // anfraCLITool is `anfra query export`, in repoDir: cold when no server runs
 // for that repo, warm (forwarded to it) when one does. A SQL case runs on the
 // data source; a semantic case runs its AQL on the semantic dataset.
-func anfraCLITool(name, repoDir, source string) tool {
+func anfraCLITool(name, repoDir, source, dataset string) tool {
 	return cliTool{
 		name: name,
 		dir:  repoDir,
 		argv: func(c benchCase, out string) []string {
 			argv := []string{"anfra", "--non-interactive", "query", "export"}
 			if c.Semantic != nil {
-				argv = append(argv, "--dataset", semanticDataset)
+				argv = append(argv, "--dataset", dataset)
 			} else {
 				argv = append(argv, "--lang", "sql", "-s", source)
 			}
@@ -172,7 +172,7 @@ var httpClient = &http.Client{Timeout: 10 * time.Minute}
 
 // anfraHTTPTool is core.query on anfra serve, streamed as NDJSON, as the SDK
 // (and so a Data App) asks for it.
-type anfraHTTPTool struct{ base, source string }
+type anfraHTTPTool struct{ base, source, dataset string }
 
 func (anfraHTTPTool) Name() string { return "anfra-http" }
 func (anfraHTTPTool) Path() string { return "http" }
@@ -183,7 +183,7 @@ func (t anfraHTTPTool) Run(ctx context.Context, c benchCase) (time.Duration, sha
 		"cache": map[string]any{"duration": "0s"},
 	}
 	if c.Semantic != nil {
-		request = map[string]any{"query": c.Semantic.AQL, "dataset": semanticDataset, "cache": map[string]any{"duration": "0s"}}
+		request = map[string]any{"query": c.Semantic.AQL, "dataset": t.dataset, "cache": map[string]any{"duration": "0s"}}
 	}
 	body, _ := json.Marshal(request)
 	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, t.base+"/api/core.query", bytes.NewReader(body))

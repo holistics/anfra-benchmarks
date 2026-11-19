@@ -84,7 +84,7 @@ func measure(ctx context.Context) error {
 		addr     = flag.String("anfra-addr", "127.0.0.1:58090", "where to run anfra serve")
 		superset = flag.String("superset", "http://127.0.0.1:58088", "Superset's base URL")
 		metabase = flag.String("metabase", "http://127.0.0.1:58089", "Metabase's base URL")
-		cubeURL  = flag.String("cube", "http://127.0.0.1:58100", "Cube's base URL")
+		cubeURL  = flag.String("cube", "", "Cube's base URL, by default the warehouse's Cube (Postgres 58100, ClickHouse 58101)")
 	)
 	flag.Parse()
 	if *out == "" {
@@ -102,8 +102,8 @@ func measure(ctx context.Context) error {
 			*toolList = "native,usql,anfra-cli-cold,anfra-cli-warm,anfra-http,superset,metabase"
 		}
 	case "semantic":
-		if *dbName != "postgres" {
-			return fmt.Errorf("the semantic group runs on postgres only, for now")
+		if *dbName == "snowflake" {
+			return fmt.Errorf("the semantic group runs on postgres and clickhouse only, for now")
 		}
 		if cases, err = loadSemanticCases(bench); err != nil {
 			return err
@@ -133,14 +133,22 @@ func measure(ctx context.Context) error {
 		"usql":   func() (tool, error) { return usqlTool(filepath.Join(bench, ".bin", "usql"), wh.USQLDSN), nil },
 		"anfra-cli-cold": func() (tool, error) {
 			d, err := coldRepo(warmRepo)
-			return anfraCLITool("anfra-cli-cold", d, wh.Source), err
+			return anfraCLITool("anfra-cli-cold", d, wh.Source, wh.Dataset), err
 		},
-		"anfra-cli-warm": func() (tool, error) { return anfraCLITool("anfra-cli-warm", warmRepo, wh.Source), nil },
-		"anfra-http":     func() (tool, error) { return anfraHTTPTool{base: "http://" + *addr, source: wh.Source}, nil },
-		"superset":       func() (tool, error) { return newSupersetTool(ctx, *superset, wh.Source) },
-		"metabase":       func() (tool, error) { return newMetabaseTool(ctx, *metabase, wh.Source) },
-		"metricflow":     func() (tool, error) { return metricflowTool(bench), nil },
-		"cube":           func() (tool, error) { return cubeTool{base: *cubeURL, secret: "bench-only-not-a-secret"}, nil },
+		"anfra-cli-warm": func() (tool, error) { return anfraCLITool("anfra-cli-warm", warmRepo, wh.Source, wh.Dataset), nil },
+		"anfra-http": func() (tool, error) {
+			return anfraHTTPTool{base: "http://" + *addr, source: wh.Source, dataset: wh.Dataset}, nil
+		},
+		"superset":   func() (tool, error) { return newSupersetTool(ctx, *superset, wh.Source) },
+		"metabase":   func() (tool, error) { return newMetabaseTool(ctx, *metabase, wh.Source) },
+		"metricflow": func() (tool, error) { return metricflowTool(bench, wh), nil },
+		"cube": func() (tool, error) {
+			base := wh.CubeBaseURL
+			if *cubeURL != "" {
+				base = *cubeURL
+			}
+			return cubeTool{base: base, secret: "bench-only-not-a-secret"}, nil
+		},
 	}
 	semanticTools := []string{"anfra-cli-cold", "anfra-cli-warm", "anfra-http", "metricflow", "cube"}
 	var chosen []tool
