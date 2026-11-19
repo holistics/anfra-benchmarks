@@ -112,6 +112,18 @@ func clickhouseClientTool(bin string) tool {
 	}
 }
 
+// snowTool is the Snowflake CLI, writing the result to a file itself as CSV,
+// on the connection snowflake/setup.py writes (.bin/snow/config.toml).
+func snowTool(binDir string) tool {
+	return cliTool{
+		name: "snow",
+		argv: func(sql, out string) []string {
+			return []string{filepath.Join(binDir, "snow-venv", "bin", "snow"), "--config-file", filepath.Join(binDir, "snow", "config.toml"),
+				"sql", "-c", "bench", "-q", sql, "-o", "output_format=csv", "-o", "quiet=true", "-o", "output_file=" + out}
+		},
+	}
+}
+
 func usqlTool(bin, dsn string) tool {
 	return cliTool{
 		name: "usql",
@@ -203,6 +215,20 @@ type supersetTool struct {
 	base       string
 	databaseID int
 	token      string
+	loggedIn   time.Time
+}
+
+// supersetLogin is a fresh access token. Superset's expire after 15 minutes by
+// default, so a long batch logs in again (see Run).
+func supersetLogin(ctx context.Context, base string) (string, error) {
+	var login struct {
+		AccessToken string `json:"access_token"`
+	}
+	body := `{"username":"admin","password":"admin","provider":"db","refresh":false}`
+	if err := callJSON(ctx, http.MethodPost, base+"/api/v1/security/login", body, nil, &login); err != nil || login.AccessToken == "" {
+		return "", fmt.Errorf("logging in to Superset: %v", err)
+	}
+	return login.AccessToken, nil
 }
 
 var supersetClientSeq atomic.Int64
@@ -215,19 +241,9 @@ func supersetClientID() string {
 }
 
 func newSupersetTool(ctx context.Context, base, database string) (*supersetTool, error) {
-	body := `{"username":"admin","password":"admin","provider":"db","refresh":false}`
-	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, base+"/api/v1/security/login", bytes.NewReader([]byte(body)))
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := httpClient.Do(req)
+	token, err := supersetLogin(ctx, base)
 	if err != nil {
-		return nil, fmt.Errorf("logging in to Superset: %w", err)
-	}
-	defer resp.Body.Close()
-	var login struct {
-		AccessToken string `json:"access_token"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&login); err != nil || login.AccessToken == "" {
-		return nil, fmt.Errorf("logging in to Superset: HTTP %d, %v", resp.StatusCode, err)
+		return nil, err
 	}
 	var databases struct {
 		Result []struct {
@@ -235,13 +251,13 @@ func newSupersetTool(ctx context.Context, base, database string) (*supersetTool,
 			Name string `json:"database_name"`
 		} `json:"result"`
 	}
-	header := map[string]string{"Authorization": "Bearer " + login.AccessToken}
+	header := map[string]string{"Authorization": "Bearer " + token}
 	if err := callJSON(ctx, http.MethodGet, base+"/api/v1/database/", "", header, &databases); err != nil {
 		return nil, fmt.Errorf("listing Superset's databases: %w", err)
 	}
 	for _, d := range databases.Result {
 		if d.Name == database {
-			return &supersetTool{base: base, databaseID: d.ID, token: login.AccessToken}, nil
+			return &supersetTool{base: base, databaseID: d.ID, token: token, loggedIn: time.Now()}, nil
 		}
 	}
 	return nil, fmt.Errorf("Superset has no database %s: see superset/start.sh", database)
@@ -251,6 +267,14 @@ func (*supersetTool) Name() string { return "superset" }
 func (*supersetTool) Path() string { return "http" }
 
 func (t *supersetTool) Run(ctx context.Context, c benchCase) (time.Duration, shape, error) {
+	// A token near its expiry is renewed before the timer starts, so no run pays for a login.
+	if time.Since(t.loggedIn) > 10*time.Minute {
+		token, err := supersetLogin(ctx, t.base)
+		if err != nil {
+			return 0, shape{}, err
+		}
+		t.token, t.loggedIn = token, time.Now()
+	}
 	body, _ := json.Marshal(map[string]any{
 		"database_id": t.databaseID, "sql": c.SQL, "runAsync": false,
 		"queryLimit": 2_000_000, "client_id": supersetClientID(),

@@ -108,6 +108,7 @@ query/
 ├── docker-compose.yml   the warehouse and the tools that run as servers
 ├── postgres/            init.sql: generates the table every case scans
 ├── clickhouse/          init.sql: the same table in ClickHouse, copied from Postgres
+├── snowflake/           init.sql: the same table in Snowflake; setup.py: each tool's connection
 ├── superset/            Superset's image, start script and config
 ├── metabase/            setup.sh: Metabase's first-run setup
 └── anfra-repo/          the anfra repo under test: one data source, no models
@@ -165,7 +166,7 @@ For the semantic group, anfra runs AQL on both paths.
 | Tool | Postgres | ClickHouse | Snowflake |
 |---|---|---|---|
 | native CLI | ✅ psql | ✅ clickhouse-client | ✅ snow (or snowsql) |
-| usql | ✅ | ✅ built with `-tags clickhouse` | ✅ ² |
+| usql | ✅ | ✅ ² | ✅ ² |
 | **anfra** | ✅ | ✅ | ✅ |
 | Superset | ✅ | ✅ | ✅ |
 | Metabase | ✅ | ✅ built-in driver | ✅ |
@@ -175,7 +176,7 @@ For the semantic group, anfra runs AQL on both paths.
 
 1. Cube's SQL API speaks the Postgres protocol, so psql can write its result to
    a CSV file. Optional: without it, Cube is HTTP only.
-2. usql needs its Snowflake driver built in, with `-tags snowflake`.
+2. usql is built with its ClickHouse and Snowflake drivers, `-tags clickhouse,snowflake`.
 3. Rill by default copies data into its own engine (DuckDB) and queries the
    copy. Run live, it queries the warehouse itself, as every other tool here
    does. Only the live mode is comparable. To confirm: that the Rill release
@@ -243,7 +244,9 @@ These hold for every batch.
   same case. No warehouse time is subtracted: every tool sends the same SQL.
 - **Correctness:** each result's rows and columns must match its case, or the
   run is a failure, and left out of the timings.
-- **No caches:** every tool's result cache is off.
+- **No caches:** every tool's result cache is off. Snowflake's own result cache
+  stays on: the benchmark times the tools, not the warehouse, and every run
+  still fetches its result over the network.
 - **Interleaving:** each round runs every (tool, case) once, in a shuffled
   order, so drift during a run spreads across all tools. Warm-up rounds first,
   not recorded.
@@ -265,7 +268,7 @@ run's floor.
 | **1** | ✅ done | Postgres | psql, usql, anfra (cold, warm, HTTP), Superset | 6 × 9 = 54 | 6 min |
 | **2** | ✅ done | Postgres | + Metabase: the full Postgres SQL run | 7 × 9 = 63 | 7 min |
 | **3** | ✅ done | ClickHouse | clickhouse-client, usql, anfra ×3, Superset, Metabase | 7 × 9 = 63 | ~10 min |
-| **4** | next | Snowflake | snow, usql, anfra ×3, Superset, Metabase | 7 × 5 = 35 | ~15 min, a few credits |
+| **4** | ⏸ parked: needs a stable connection close to Snowflake | Snowflake | snow, usql, anfra ×3, Superset, Metabase | 7 × 5 = 35 | ~15 min, a few credits |
 | **5** | | Postgres | semantic: anfra, Cube, MetricFlow | 3 tools × 6 cases × 2 (compile, end to end) = 36 | ~10 min |
 | **6** | | ClickHouse | semantic: anfra, Cube, Rill | 36 | ~10 min |
 | **7** | | Snowflake | semantic: anfra, Cube, MetricFlow, Rill | 4 × 6 × 2 = 48 | ~15 min, a few credits |
@@ -273,6 +276,14 @@ run's floor.
 In all: 335 cells. The time is mostly the large cases on the slower tools
 (in trial runs, usql and Superset spent about 70% of it), not the number of
 cells.
+
+**Batch 4 is parked until it can run on a stable connection close to the
+Snowflake account** (in AWS Sydney, `ap-southeast-2`), such as a machine in that
+region. Its setup is done and works for every tool (`snowflake/`). A first run
+from here was dominated by the network: a round trip to Sydney takes about
+300 ms, and varies by ±50%, while Snowflake itself spent a median of 43 ms per
+query, with no queueing. The slowest of 5 runs was up to 2.9× the median, enough
+to flip close comparisons. Its results were set aside, not published.
 
 Before batch 5, the semantic cases and models need designing: a batch of
 their own, with no measurement.
@@ -300,7 +311,6 @@ path.
 
 ## Open questions
 
-- Which Snowflake account and region, and who pays for the credits?
 - Are the results for internal use only, or to be published? Publishing
   needs a fairness review of each tool's settings by someone who knows the
   tool.

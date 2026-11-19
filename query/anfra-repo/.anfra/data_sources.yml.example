@@ -29,7 +29,7 @@ data_sources:
       host: <account>.snowflakecomputing.com   # the full account host, such as xy12345.ap-southeast-1.snowflakecomputing.com
       port: 443
       user: <user>
-      password: <password>                    # a password, or a programmatic access token
+      password: token                    # a password, or a programmatic access token
       # private_key: |                        # or an unencrypted PKCS#8 key (-----BEGIN PRIVATE KEY-----), as text
       dbname: BENCH                           # the setup creates it, and bench_wide in its PUBLIC schema
       warehouse: BENCH_XS                     # an X-Small made for the benchmark, auto-suspending after 60 s
