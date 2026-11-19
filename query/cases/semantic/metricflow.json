@@ -1,0 +1,72 @@
+{
+  "_doc": "MetricFlow's form of each semantic case: the arguments to `mf query` (run in metricflow/, with --csv <file> added). A listing case has group-bys and no metric: MetricFlow returns their distinct values, and the line's entity among them makes each row one line item, or why the case is not run with the model as it is. The model is the same as the other tools' (metricflow/models).",
+  "total": {
+    "args": [
+      "--metrics",
+      "revenue"
+    ]
+  },
+  "by_month": {
+    "args": [
+      "--metrics",
+      "revenue",
+      "--group-by",
+      "order__order_date__month"
+    ]
+  },
+  "by_nation": {
+    "not_run": "Needs a denormalized model, such as orders carrying its customer's nation key (a join in the orders dbt model). MetricFlow joins at most two hops from a measure (MAX_JOIN_HOPS = 2), and a customer's nation is three hops from a line item: line item, order, customer, nation."
+  },
+  "fan_out": {
+    "not_run": "Needs a denormalized model, as by_nation does: the order count by nation is two hops from orders, but the revenue by nation is three from line items."
+  },
+  "share_of_total": {
+    "not_run": "Needs a denormalized model, as by_nation does, and a way to take revenue over every nation within a query grouped by nation. As far as we found, MetricFlow's metric types (simple, ratio, derived, cumulative, conversion) compute at the query's own grain, so the share would be computed outside MetricFlow, from two queries."
+  },
+  "by_customer": {
+    "args": [
+      "--metrics",
+      "revenue",
+      "--group-by",
+      "customer__name"
+    ]
+  },
+  "list_1k": {
+    "args": [
+      "--group-by",
+      "line,line__extended_price",
+      "--where",
+      "{{ Dimension('line__orderkey') }} <= 1000"
+    ]
+  },
+  "list_10k": {
+    "args": [
+      "--group-by",
+      "line,line__extended_price",
+      "--where",
+      "{{ Dimension('line__orderkey') }} <= 10000"
+    ]
+  },
+  "list_100k": {
+    "args": [
+      "--group-by",
+      "line,line__extended_price",
+      "--where",
+      "{{ Dimension('line__orderkey') }} <= 100000"
+    ]
+  },
+  "list_1m": {
+    "args": [
+      "--group-by",
+      "line,line__extended_price",
+      "--where",
+      "{{ Dimension('line__orderkey') }} <= 999000"
+    ]
+  },
+  "list_100k_medium": {
+    "not_run": "Needs a denormalized model, such as orders carrying its customer's name, market segment, address, phone and account balance. In a query without a metric, as a listing is, MetricFlow returns the dimensions one hop from the line item (its order's) and the customer's key, but not the customer's dimensions, two hops away (observed with MetricFlow 0.214.0; with a metric, as in by_customer, it reaches them)."
+  },
+  "list_100k_wide": {
+    "not_run": "Needs a denormalized model, as list_100k_medium does: its customer columns are two hops from the line item."
+  }
+}

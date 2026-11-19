@@ -31,6 +31,7 @@ import (
 // run is one measured run of a case by a tool, as written to the results.
 type run struct {
 	Batch int     `json:"batch"`
+	Group string  `json:"group"`
 	DB    string  `json:"db"`
 	Tool  string  `json:"tool"`
 	Path  string  `json:"path"`
@@ -40,6 +41,9 @@ type run struct {
 	shape
 	OK    bool   `json:"ok"`
 	Error string `json:"error,omitempty"`
+	// NotRun says why a tool doesn't run a case, and what it would need to:
+	// recorded once, with round 0, instead of runs.
+	NotRun string `json:"not_run,omitempty"`
 }
 
 func main() {
@@ -72,13 +76,15 @@ func measure(ctx context.Context) error {
 		batch    = flag.Int("batch", 1, "the batch number recorded with each run")
 		rounds   = flag.Int("rounds", 5, "measured rounds")
 		warmup   = flag.Int("warmup", 1, "unrecorded rounds before them")
+		group    = flag.String("group", "sql", "the cases: sql (the same SQL for every tool) or semantic (each tool's semantic query, on TPC-H)")
 		dbName   = flag.String("db", "postgres", "the warehouse: postgres, clickhouse or snowflake")
-		toolList = flag.String("tools", "native,usql,anfra-cli-cold,anfra-cli-warm,anfra-http,superset,metabase", "the tools to run; native is the warehouse's own CLI")
+		toolList = flag.String("tools", "", "the tools to run; native is the warehouse's own CLI. By default, every tool of the group")
 		caseList = flag.String("cases", "", "the cases to run, all by default")
 		skipList = flag.String("skip", "", "tool:case cells not to run")
 		addr     = flag.String("anfra-addr", "127.0.0.1:58090", "where to run anfra serve")
 		superset = flag.String("superset", "http://127.0.0.1:58088", "Superset's base URL")
 		metabase = flag.String("metabase", "http://127.0.0.1:58089", "Metabase's base URL")
+		cubeURL  = flag.String("cube", "http://127.0.0.1:58100", "Cube's base URL")
 	)
 	flag.Parse()
 	if *out == "" {
@@ -90,9 +96,27 @@ func measure(ctx context.Context) error {
 	}
 
 	cases := allCases
+	switch *group {
+	case "sql":
+		if *toolList == "" {
+			*toolList = "native,usql,anfra-cli-cold,anfra-cli-warm,anfra-http,superset,metabase"
+		}
+	case "semantic":
+		if *dbName != "postgres" {
+			return fmt.Errorf("the semantic group runs on postgres only, for now")
+		}
+		if cases, err = loadSemanticCases(bench); err != nil {
+			return err
+		}
+		if *toolList == "" {
+			*toolList = "anfra-cli-cold,anfra-cli-warm,anfra-http,metricflow,cube"
+		}
+	default:
+		return fmt.Errorf("no group %q: use sql or semantic", *group)
+	}
 	if *caseList != "" {
 		names := strings.Split(*caseList, ",")
-		cases = slices.DeleteFunc(slices.Clone(allCases), func(c benchCase) bool { return !slices.Contains(names, c.Name) })
+		cases = slices.DeleteFunc(slices.Clone(cases), func(c benchCase) bool { return !slices.Contains(names, c.Name) })
 	}
 	skip := map[string]bool{}
 	for _, cell := range strings.Split(*skipList, ",") {
@@ -115,13 +139,19 @@ func measure(ctx context.Context) error {
 		"anfra-http":     func() (tool, error) { return anfraHTTPTool{base: "http://" + *addr, source: wh.Source}, nil },
 		"superset":       func() (tool, error) { return newSupersetTool(ctx, *superset, wh.Source) },
 		"metabase":       func() (tool, error) { return newMetabaseTool(ctx, *metabase, wh.Source) },
+		"metricflow":     func() (tool, error) { return metricflowTool(bench), nil },
+		"cube":           func() (tool, error) { return cubeTool{base: *cubeURL, secret: "bench-only-not-a-secret"}, nil },
 	}
+	semanticTools := []string{"anfra-cli-cold", "anfra-cli-warm", "anfra-http", "metricflow", "cube"}
 	var chosen []tool
 	needServer := false
 	for _, name := range strings.Split(*toolList, ",") {
 		mk, ok := tools[name]
 		if !ok {
 			return fmt.Errorf("no tool %q", name)
+		}
+		if (*group == "semantic") != slices.Contains(semanticTools, name) && !strings.HasPrefix(name, "anfra-") {
+			return fmt.Errorf("%s does not run the %s group's cases", name, *group)
 		}
 		t, err := mk()
 		if err != nil {
@@ -152,6 +182,14 @@ func measure(ctx context.Context) error {
 	var cells []cell
 	for _, t := range chosen {
 		for _, c := range cases {
+			if c.Semantic != nil && c.Semantic.NotRun[t.Name()] != "" {
+				// Not run: recorded once, with what the tool would need, rather than left out.
+				if err := enc.Encode(run{Batch: *batch, Group: *group, DB: wh.Name, Tool: t.Name(), Path: t.Path(), Case: c.Name,
+					NotRun: c.Semantic.NotRun[t.Name()]}); err != nil {
+					return err
+				}
+				continue
+			}
 			if !skip[t.Name()+":"+c.Name] {
 				cells = append(cells, cell{t, c.on(wh)})
 			}
@@ -166,13 +204,15 @@ func measure(ctx context.Context) error {
 				return ctx.Err()
 			}
 			took, s, err := x.t.Run(ctx, x.c)
-			r := run{Batch: *batch, DB: wh.Name, Tool: x.t.Name(), Path: x.t.Path(), Case: x.c.Name,
+			r := run{Batch: *batch, Group: *group, DB: wh.Name, Tool: x.t.Name(), Path: x.t.Path(), Case: x.c.Name,
 				Round: round, Ms: float64(took.Microseconds()) / 1000, shape: s}
 			switch {
 			case err != nil:
 				r.Error = truncate(err.Error(), 500)
 			case s.Rows != x.c.Rows || s.Cols != x.c.Cols:
 				r.Error = fmt.Sprintf("returned %d rows × %d columns, want %d × %d", s.Rows, s.Cols, x.c.Rows, x.c.Cols)
+			case x.c.Semantic != nil && checkValues(x.c.Semantic.Answer, s.values) != nil:
+				r.Error = "values differ from the answer: " + checkValues(x.c.Semantic.Answer, s.values).Error()
 			default:
 				r.OK = true
 			}

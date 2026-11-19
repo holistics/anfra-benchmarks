@@ -1,0 +1,90 @@
+# The semantic group's model for Cube: TPC-H in the benchmark Postgres, the same model as anfra's
+# (anfra-repo/models/tpch) and MetricFlow's (metricflow/models). Each cube has its primary key, so
+# Cube counts each order once when a query fans out across a join. Each refreshes every second, so a
+# benchmark run, seconds after the last run of its case, is never answered from Cube's cache.
+cubes:
+  - name: lineitem
+    sql_table: tpch.lineitem
+    refresh_key: { every: "1 second" }
+    joins:
+      - name: orders
+        relationship: many_to_one
+        sql: "{CUBE}.l_orderkey = {orders}.o_orderkey"
+    dimensions:
+      # TPC-H keys a line by its order and line number; this one number is that pair.
+      - { name: line_id, sql: "{CUBE}.l_orderkey::bigint * 10 + {CUBE}.l_linenumber", type: number, primary_key: true, public: true }
+      - { name: orderkey, sql: l_orderkey, type: number }
+      - { name: extended_price, sql: l_extendedprice, type: number }
+      - { name: quantity, sql: l_quantity, type: number }
+      - { name: discount, sql: l_discount, type: number }
+      - { name: tax, sql: l_tax, type: number }
+      - { name: return_flag, sql: l_returnflag, type: string }
+      - { name: line_status, sql: l_linestatus, type: string }
+      - { name: ship_date, sql: l_shipdate, type: time }
+      - { name: receipt_date, sql: l_receiptdate, type: time }
+      - { name: ship_mode, sql: l_shipmode, type: string }
+    measures:
+      - { name: revenue, sql: "{CUBE}.l_extendedprice * (1 - {CUBE}.l_discount)", type: sum }
+      - { name: avg_discount, sql: "{CUBE}.l_discount", type: avg }
+      # Share of total: revenue over the revenue of every group (a multi-stage measure whose inner
+      # sum keeps no dimension, so it ignores what the query groups by).
+      - name: total_revenue
+        multi_stage: true
+        sql: "{revenue}"
+        type: sum
+        grain:
+          keep_only: []
+      - name: revenue_share
+        multi_stage: true
+        sql: "{revenue} / NULLIF({total_revenue}, 0)"
+        type: number
+
+  - name: orders
+    sql_table: tpch.orders
+    refresh_key: { every: "1 second" }
+    joins:
+      - name: customer
+        relationship: many_to_one
+        sql: "{CUBE}.o_custkey = {customer}.c_custkey"
+    dimensions:
+      - { name: o_orderkey, sql: o_orderkey, type: number, primary_key: true }
+      - { name: order_date, sql: o_orderdate, type: time }
+      - { name: order_status, sql: o_orderstatus, type: string }
+      - { name: order_priority, sql: o_orderpriority, type: string }
+      - { name: clerk, sql: o_clerk, type: string }
+      - { name: total_price, sql: o_totalprice, type: number }
+    measures:
+      - { name: order_count, type: count }
+
+  - name: customer
+    sql_table: tpch.customer
+    refresh_key: { every: "1 second" }
+    joins:
+      - name: nation
+        relationship: many_to_one
+        sql: "{CUBE}.c_nationkey = {nation}.n_nationkey"
+    dimensions:
+      - { name: c_custkey, sql: c_custkey, type: number, primary_key: true }
+      - { name: name, sql: c_name, type: string }
+      - { name: market_segment, sql: c_mktsegment, type: string }
+      - { name: address, sql: c_address, type: string }
+      - { name: phone, sql: c_phone, type: string }
+      - { name: account_balance, sql: c_acctbal, type: number }
+
+  - name: nation
+    sql_table: tpch.nation
+    refresh_key: { every: "1 second" }
+    joins:
+      - name: region
+        relationship: many_to_one
+        sql: "{CUBE}.n_regionkey = {region}.r_regionkey"
+    dimensions:
+      - { name: n_nationkey, sql: n_nationkey, type: number, primary_key: true }
+      - { name: name, sql: n_name, type: string }
+
+  - name: region
+    sql_table: tpch.region
+    refresh_key: { every: "1 second" }
+    dimensions:
+      - { name: r_regionkey, sql: r_regionkey, type: number, primary_key: true }
+      - { name: name, sql: r_name, type: string }

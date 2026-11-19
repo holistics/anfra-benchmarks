@@ -1,0 +1,8 @@
+explore {
+  dimensions {
+    line_id: lineitem.line_id,
+    extended_price: lineitem.l_extendedprice
+  }
+  filters { lineitem.l_orderkey <= 100000 }
+  sorts { line_id asc }
+}

@@ -1,0 +1,16 @@
+# The semantic group's model for MetricFlow: a minimal dbt project over TPC-H in the benchmark
+# Postgres. Each table is a plain view (schema mf), which Postgres inlines, and the semantic models
+# and metrics are in models/semantic.yml: the same model as anfra's (anfra-repo/models/tpch).
+name: bench_tpch
+version: "1.0"
+config-version: 2
+profile: bench
+model-paths: ["models"]
+target-path: target
+# No usage tracking: dbt's tracking call runs before every command, and on a slow network it took
+# about 10 s of each `mf query`. Every other tool's telemetry is off too.
+flags:
+  send_anonymous_usage_stats: false
+models:
+  bench_tpch:
+    +materialized: view

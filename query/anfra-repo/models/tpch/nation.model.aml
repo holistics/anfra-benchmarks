@@ -1,0 +1,11 @@
+// TPC-H's nations, each in a region.
+Model nation {
+  type: 'table'
+  label: 'Nations'
+  data_source_name: 'bench_pg'
+  table_name: 'tpch.nation'
+
+  dimension n_nationkey { label: 'Nation key' type: 'number' primary_key: true definition: @sql {{ #SOURCE.n_nationkey }};; }
+  dimension n_name { label: 'Nation' type: 'text' definition: @sql {{ #SOURCE.n_name }};; }
+  dimension n_regionkey { label: 'Region key' type: 'number' hidden: true definition: @sql {{ #SOURCE.n_regionkey }};; }
+}

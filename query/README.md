@@ -22,6 +22,7 @@ how to run a batch yourself.
 | 1 | Postgres | psql, usql, anfra (CLI cold, CLI warm, HTTP), Superset | [batch1.md](results/linux-ryzen7-7840u/batch1.md) |
 | 2 | Postgres | psql, usql, anfra (CLI cold, CLI warm, HTTP), Superset, **Metabase** | [batch2.md](results/linux-ryzen7-7840u/batch2.md) |
 | 3 | ClickHouse | clickhouse-client, usql, anfra (CLI cold, CLI warm, HTTP), Superset, Metabase | [batch3.md](results/linux-ryzen7-7840u/batch3.md) |
+| 5 | Postgres, semantic (TPC-H): 6 aggregate cases, 6 listing cases | anfra (CLI cold, CLI warm, HTTP), MetricFlow, Cube | [batch5.md](results/linux-ryzen7-7840u/batch5.md) |
 
 All ran on one machine, `linux-ryzen7-7840u` (AMD Ryzen 7 PRO 7840U, 27 GiB,
 Linux).
@@ -40,11 +41,13 @@ Three ways, from quickest to most detailed. None needs Docker or a warehouse.
    anfra serve          # then open the address it prints, at /apps/query-benchmark
    ```
 
-   Pick a machine, a warehouse (Postgres by default) and one of its batches
-   (its newest by default), and switch
+   Pick a machine, the cases (SQL, or semantic on TPC-H), a warehouse
+   (Postgres by default) and one of its batches (its newest by default), and
+   switch
    the file and HTTP paths on or off. The page shows each tool's median per
    case, a comparison of the tools you pick against a baseline (Superset and
-   Metabase against anfra HTTP by default), every tool and case in a table, every
+   Metabase against anfra HTTP by default; Cube in the semantic cases), every
+   tool and case in a table (with a case a tool doesn't run marked as such), every
    measured run with filters, and a preview of what each case returns.
 3. **Query the raw runs** with anfra, from the report's repo. Each batch's
    runs are in `results/<machine>/batch<N>.jsonl`, one JSON line per measured
@@ -122,8 +125,9 @@ the Data App. The rest is for running the benchmark.
 1. **SQL group:** for the same SQL, how much time does each tool add on top of
    the warehouse, by result size, when the result goes to a file (CLI) or to a
    frontend (HTTP)?
-2. **Semantic group:** for the same semantic query, how long does each
-   semantic layer take to compile it to SQL, and to deliver its result?
+2. **Semantic group:** for the same semantic query (a few measures, by a few
+   dimensions), how long does each semantic layer take to answer it, end to
+   end: compile it to SQL, run it, and deliver its result?
 
 ## The matrix
 
@@ -146,7 +150,7 @@ the same path:
   the whole answer is read and parsed. Formats differ: anfra streams NDJSON,
   the BI tools return one JSON document.
 
-Most tools have only one of the two. anfra and Cube have both.
+Most tools have only one of the two; anfra has both.
 
 | Tool | Group | CLI → CSV file | HTTP |
 |---|---|---|---|
@@ -155,8 +159,8 @@ Most tools have only one of the two. anfra and Cube have both.
 | **anfra** | SQL, semantic | ✅ `anfra query export`, cold (no server) and warm (forwarded to `anfra serve`) | ✅ `core.query`, streamed NDJSON |
 | Superset 6.1 | SQL | ✗ no CLI | ✅ SQL Lab execute, synchronous |
 | Metabase v0.65 | SQL | ✗ no CLI | ✅ `/api/dataset`, native query |
-| Cube | semantic | ✅ through psql, on its SQL API ¹ | ✅ REST `/load` |
-| MetricFlow | semantic | ✅ `mf query --csv` | ✗ none (dbt Cloud only) |
+| Cube | semantic | ✗ none: its SQL API is not used ¹ | ✅ REST `/cubejs-api/v1/load` |
+| MetricFlow | semantic | ✅ `mf query --csv`, a new Python process each call | ✗ none (dbt Cloud only) |
 | Rill | semantic | ✗ not planned | ✅ runtime API |
 
 For the semantic group, anfra runs AQL on both paths.
@@ -171,11 +175,12 @@ For the semantic group, anfra runs AQL on both paths.
 | Superset | ✅ | ✅ | ✅ |
 | Metabase | ✅ | ✅ built-in driver | ✅ |
 | Cube | ✅ | ✅ | ✅ |
-| MetricFlow | ✅ | ✗ no adapter | ✅ |
+| MetricFlow | ✅ | to confirm: `dbt-metricflow` 0.16 offers a `dbt-clickhouse` option | ✅ |
 | Rill | ✗ not a query engine | ✅ live ³ | ✅ live ³ |
 
-1. Cube's SQL API speaks the Postgres protocol, so psql can write its result to
-   a CSV file. Optional: without it, Cube is HTTP only.
+1. Cube's SQL API speaks the Postgres protocol, so psql could write its result
+   to a CSV file. It is a SQL front end on Cube's semantic layer, not a CLI, so
+   it is left out: Cube is measured on HTTP, the path its frontends use.
 2. usql is built with its ClickHouse and Snowflake drivers, `-tags clickhouse,snowflake`.
 3. Rill by default copies data into its own engine (DuckDB) and queries the
    copy. Run live, it queries the warehouse itself, as every other tool here
@@ -215,23 +220,94 @@ On **Snowflake**, a subset, to bound credits and time: `select1`,
 
 ### Semantic group: query shape
 
-Here the query's shape matters: it is what the semantic layer compiles. The
-data is TPC-H at scale factor 1, modelled the same way in each tool. To be
-designed in its own batch; a first draft:
+Here the query's shape matters: it is what the semantic layer plans and
+compiles, and each tool writes its own SQL for it. Each case is measured **end
+to end**, as the SQL group is: compile, run, deliver. How that time splits
+(compiling, the warehouse running each tool's SQL, delivering) can be dug into
+later, if a result calls for it.
 
-| Case | What it exercises | Rows out |
+**Data:** TPC-H at scale factor 1, in the benchmark's Postgres: `lineitem` (6M
+rows), `orders` (1.5M), `customer` (150k), `nation` and `region`. It has the
+joins a semantic layer must handle, which `bench_wide` lacks.
+
+**Model:** the same in every tool, in its own language: anfra's AML, Cube's
+data model, and MetricFlow's semantic models and metrics in a minimal dbt
+project.
+
+- Models: `lineitem → orders → customer → nation → region`.
+- Measures: `revenue` (sum of `l_extendedprice × (1 − l_discount)`, on
+  lineitem), `order_count` (count of orders, on orders), `avg_discount` (on
+  lineitem).
+- Dimensions: order date, nation, region, customer, market segment.
+
+**Cases.** A semantic layer adds cost in a few distinct places; each case puts
+its weight on one, and together they are what a BI page typically asks:
+
+| Case | What it stresses | On a BI page | Rows out |
+|---|---|---|---|
+| `total` | the fixed cost, with almost nothing to plan: reading the request and model, compiling, connecting (the semantic `select1`) | a KPI card | 1 |
+| `by_month` | time handling: each tool's own machinery for date grains, which often shapes its SQL | a time series | ~80 |
+| `by_nation` | join planning across three hops (lineitem → orders → customer → nation) | a breakdown by a related attribute | 25 |
+| `fan_out` | two measures from two grains in one query, `order_count` (orders) and `revenue` (lineitems), by nation, filtered on a market segment: joining orders to lineitems repeats each order per line, and a careless layer counts orders several times | a filtered breakdown with mixed measures | 25 |
+| `share_of_total` | a measure that needs another grain: each nation's share of the total revenue (a window, a subquery or two queries, depending on the tool) | a percentage column | 25 |
+| `by_customer` | delivering a large result through the semantic layer | a detail table, or an export | ~100k |
+
+The criteria: each case differs from the others in one main way; each is a
+query real BI pages send; results stay small, except `by_customer`, so that
+the semantic layer's own cost shows rather than delivery; and every case is
+expressible in every tool, except where expressiveness is itself the finding
+(`share_of_total`). The model is the same in every tool. When a tool can't run
+a case with it, the case is recorded as **not run**, with what the tool would
+need to run it (for example, a denormalized model), rather than left out or
+called unsupported.
+
+**Listing cases.** The cases above are aggregates: each row is a total. The
+other large result in BI is a **listing**, rows as they are: a detail table, a
+drill-through to underlying records, an export. It is a different job for a
+semantic layer: no `GROUP BY` over 6M line items, so Postgres's share of the
+time shrinks and each tool's own delivery cost shows, as in the SQL group. Each
+tool lists its own way: anfra with an explore of dimensions only, including the
+line's key; Cube with its `ungrouped` query option; MetricFlow with group-bys
+and no metric. How each does it, and the SQL it writes, is part of the result.
+
+The listing cases are line items with their order's and customer's attributes:
+the line items of the orders up to a key, which sets the number of rows exactly
+(TPC-H numbers about four line items per order key). Two sweeps on one shape:
+rows at a fixed width, then width at a fixed row count.
+
+| Case | Rows | Columns |
+|---|---:|---:|
+| `list_1k` | 1,004 (orders up to key 1,000) | 2 |
+| `list_10k` | 9,965 (up to 10,000) | 2 |
+| `list_100k` | 100,386 (up to 100,000) | 2 |
+| `list_1m` | 999,052 (up to 999,000) | 2 |
+| `list_100k_medium` | 100,386 | 10 |
+| `list_100k_wide` | 100,386 | 20 |
+
+- **Columns** come from the line item (quantity, price, discount, ship date,
+  ship mode, …), its order (date, status, priority, clerk, …) and its customer
+  (name, segment, account balance, …), mixing text, numbers and dates, as the
+  SQL group's widths do. All are at most two hops from a line item.
+- **`list_1m`** stays under anfra's default limit over HTTP (1M rows).
+- **`by_customer`** stays as the large *aggregated* result.
+
+Left out for now, to keep the matrix small: period over period (this month
+against last) and top-N (the 10 largest customers). Tools support them very
+differently, so they would mostly measure features rather than cost.
+
+**Correctness: values, not only shape.** Each tool writes its own SQL, so the
+same rows and columns can hide wrong numbers. Each case's result is checked
+value by value against a hand-written SQL answer (rounded where tools' number
+types differ). A tool whose numbers differ fails the case. `fan_out` is the
+case most likely to catch one.
+
+**How each tool is run**, on its native path:
+
+| Tool | File path (CLI → CSV file) | HTTP path |
 |---|---|---|
-| `total` | one measure, no dimension: the compile floor | 1 |
-| `by_month` | one measure by a date dimension, truncated | ~80 |
-| `by_nation` | measures across a join (orders → customer → nation) | 25 |
-| `filtered` | several measures, filtered on a dimension of a joined model | ~100 |
-| `share_of_total` | a measure as a share of its total (window or level of detail) | 25 |
-| `by_customer` | one measure by a high-cardinality dimension | ~100k |
-
-A tool that can't express a case is recorded as "unsupported", not left out.
-
-Each case is measured twice: **compile only** (anfra `query compile`, Cube's
-`/sql`, `mf query --explain`) and **end to end**.
+| anfra | `anfra query export` with the case's AQL, cold and warm | `core.query` with the case's AQL |
+| MetricFlow | `mf query --metrics … --group-by … --csv <file>` | – |
+| Cube | – | `/cubejs-api/v1/load`, with no pre-aggregations, and a one-second refresh key on each cube so no run comes from its cache |
 
 ## Method
 
@@ -269,11 +345,11 @@ run's floor.
 | **2** | ✅ done | Postgres | + Metabase: the full Postgres SQL run | 7 × 9 = 63 | 7 min |
 | **3** | ✅ done | ClickHouse | clickhouse-client, usql, anfra ×3, Superset, Metabase | 7 × 9 = 63 | ~10 min |
 | **4** | ⏸ parked: needs a stable connection close to Snowflake | Snowflake | snow, usql, anfra ×3, Superset, Metabase | 7 × 5 = 35 | ~15 min, a few credits |
-| **5** | | Postgres | semantic: anfra, Cube, MetricFlow | 3 tools × 6 cases × 2 (compile, end to end) = 36 | ~10 min |
-| **6** | | ClickHouse | semantic: anfra, Cube, Rill | 36 | ~10 min |
-| **7** | | Snowflake | semantic: anfra, Cube, MetricFlow, Rill | 4 × 6 × 2 = 48 | ~15 min, a few credits |
+| **5** | ✅ done | Postgres | semantic: anfra (CLI cold, CLI warm, HTTP), MetricFlow, Cube | 5 × 12 = 60 (6 aggregate cases, 6 listing cases) | ~15 min |
+| **6** | | ClickHouse | semantic: anfra ×3, Cube, Rill | 5 × 6 = 30 | ~10 min |
+| **7** | | Snowflake | semantic: anfra ×3, Cube, MetricFlow, Rill | 6 × 6 = 36 | parked, as batch 4 |
 
-In all: 335 cells. The time is mostly the large cases on the slower tools
+In all: 341 cells. The time is mostly the large cases on the slower tools
 (in trial runs, usql and Superset spent about 70% of it), not the number of
 cells.
 
@@ -285,8 +361,8 @@ from here was dominated by the network: a round trip to Sydney takes about
 query, with no queueing. The slowest of 5 runs was up to 2.9× the median, enough
 to flip close comparisons. Its results were set aside, not published.
 
-Before batch 5, the semantic cases and models need designing: a batch of
-their own, with no measurement.
+Batch 5's design (data, model, cases, checks) is in
+[Semantic group: query shape](#semantic-group-query-shape).
 
 ## Runner work, by batch
 
@@ -297,10 +373,20 @@ their own, with no measurement.
   results file and run only the cells short of their rounds, so a run can be
   stopped (Ctrl-C) and continued. Warm-ups run again on resume, since
   processes restart cold.
-- **Batch 4:** Snowflake credentials from the environment, never in the repo;
-  the subset of cases.
-- **Batch 5:** semantic cases (a query per tool per case), compile-only
-  timing, and adapters for Cube, MetricFlow and Rill.
+- ✅ **Batch 4:** Snowflake's connection from the `bench_sf` data source, never
+  in the repo; the subset of cases; Superset's login renewed on long batches.
+- ✅ **Batch 5, the cases:** TPC-H in Postgres; the model in AML, Cube's data
+  model and a dbt project for MetricFlow; each case as AQL, a Cube query and an
+  `mf query` call, and its hand-written SQL answer.
+- **Batch 5, the listing cases:** line-item dimensions in all three models;
+  each listing case in each tool's form (anfra dimensions only, Cube
+  `ungrouped`, MetricFlow group-bys without a metric), its hand-written SQL
+  answer, and the date ranges that give each size. Then batch 5 runs again,
+  all 12 semantic cases in one session, replacing its first results.
+- ✅ **Batch 5, running them:** the runner's `-group semantic`, which reads the
+  cases from `cases/semantic/`; a value check on every result; adapters for
+  MetricFlow (CLI) and Cube (HTTP), and anfra running AQL; cases a tool doesn't
+  run recorded with why.
 
 ## Results
 

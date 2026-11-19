@@ -1,0 +1,5 @@
+explore {
+  dimensions { customer: customer.c_name }
+  measures { revenue: lineitem.revenue }
+  sorts { customer asc }
+}

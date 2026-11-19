@@ -1,0 +1,26 @@
+explore {
+  dimensions {
+    line_id: lineitem.line_id,
+    extended_price: lineitem.l_extendedprice,
+    quantity: lineitem.l_quantity,
+    discount: lineitem.l_discount,
+    ship_date: lineitem.l_shipdate,
+    ship_mode: lineitem.l_shipmode,
+    order_date: orders.o_orderdate,
+    order_status: orders.o_orderstatus,
+    customer_name: customer.c_name,
+    market_segment: customer.c_mktsegment,
+    tax: lineitem.l_tax,
+    return_flag: lineitem.l_returnflag,
+    line_status: lineitem.l_linestatus,
+    receipt_date: lineitem.l_receiptdate,
+    order_priority: orders.o_orderpriority,
+    clerk: orders.o_clerk,
+    total_price: orders.o_totalprice,
+    customer_address: customer.c_address,
+    customer_phone: customer.c_phone,
+    account_balance: customer.c_acctbal
+  }
+  filters { lineitem.l_orderkey <= 100000 }
+  sorts { line_id asc }
+}

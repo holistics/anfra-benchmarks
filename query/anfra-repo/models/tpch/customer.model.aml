@@ -1,0 +1,15 @@
+// TPC-H's customers.
+Model customer {
+  type: 'table'
+  label: 'Customers'
+  data_source_name: 'bench_pg'
+  table_name: 'tpch.customer'
+
+  dimension c_custkey { label: 'Customer key' type: 'number' primary_key: true definition: @sql {{ #SOURCE.c_custkey }};; }
+  dimension c_name { label: 'Customer' type: 'text' definition: @sql {{ #SOURCE.c_name }};; }
+  dimension c_nationkey { label: 'Nation key' type: 'number' hidden: true definition: @sql {{ #SOURCE.c_nationkey }};; }
+  dimension c_mktsegment { label: 'Market segment' type: 'text' definition: @sql {{ #SOURCE.c_mktsegment }};; }
+  dimension c_address { label: 'Address' type: 'text' definition: @sql {{ #SOURCE.c_address }};; }
+  dimension c_phone { label: 'Phone' type: 'text' definition: @sql {{ #SOURCE.c_phone }};; }
+  dimension c_acctbal { label: 'Account balance' type: 'number' definition: @sql {{ #SOURCE.c_acctbal }};; }
+}

@@ -1,0 +1,13 @@
+// The semantic group's dataset: TPC-H's line items, orders, customers, nations and regions, on the
+// benchmark Postgres. The same model is written for Cube and MetricFlow, in their own languages.
+Dataset tpch {
+  label: 'TPC-H'
+  data_source_name: 'bench_pg'
+  models: [lineitem, orders, customer, nation, region]
+  relationships: [
+    relationship(lineitem.l_orderkey > orders.o_orderkey, true),
+    relationship(orders.o_custkey > customer.c_custkey, true),
+    relationship(customer.c_nationkey > nation.n_nationkey, true),
+    relationship(nation.n_regionkey > region.r_regionkey, true),
+  ]
+}

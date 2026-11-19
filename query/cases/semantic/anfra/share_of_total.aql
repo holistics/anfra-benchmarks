@@ -1,0 +1,8 @@
+explore {
+  dimensions { nation_name: nation.n_name }
+  measures {
+    revenue: lineitem.revenue,
+    revenue_share: lineitem.revenue * 1.0 / (lineitem.revenue | of_all(nation))
+  }
+  sorts { nation_name asc }
+}

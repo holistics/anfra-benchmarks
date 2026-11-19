@@ -26,10 +26,12 @@ type tool interface {
 	Run(ctx context.Context, c benchCase) (time.Duration, shape, error)
 }
 
-// shape is a result's size, which must match its case's.
+// shape is a result's size, which must match its case's, and, for a semantic
+// case, its values, which must match its answer's.
 type shape struct {
-	Rows int `json:"rows"`
-	Cols int `json:"cols"`
+	Rows   int        `json:"rows"`
+	Cols   int        `json:"cols"`
+	values [][]string // only for a semantic case
 }
 
 // --- CLI tools: time from start to exit, with the file fully written. -----------
@@ -40,7 +42,7 @@ type cliTool struct {
 	name string
 	dir  string
 	env  []string
-	argv func(sql, out string) []string
+	argv func(c benchCase, out string) []string
 }
 
 func (t cliTool) Name() string { return t.name }
@@ -49,7 +51,7 @@ func (t cliTool) Path() string { return "file" }
 func (t cliTool) Run(ctx context.Context, c benchCase) (time.Duration, shape, error) {
 	out := filepath.Join(os.TempDir(), fmt.Sprintf("bench-%s-%d.csv", t.name, time.Now().UnixNano()))
 	defer os.Remove(out)
-	argv := t.argv(c.SQL, out)
+	argv := t.argv(c, out)
 	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
 	cmd.Dir = t.dir
 	cmd.Env = append(os.Environ(), t.env...)
@@ -62,31 +64,36 @@ func (t cliTool) Run(ctx context.Context, c benchCase) (time.Duration, shape, er
 	if err != nil {
 		return took, shape{}, fmt.Errorf("%s: %w: %s", argv[0], err, bytes.TrimSpace(stderr.Bytes()))
 	}
-	s, err := csvShape(out)
+	s, err := csvShape(out, c.Semantic != nil)
 	return took, s, err
 }
 
-// csvShape counts a CSV file's columns, and its rows after the header.
-func csvShape(path string) (shape, error) {
+// csvShape counts a CSV file's columns, and its rows after the header; with
+// keep, it keeps the rows' values too.
+func csvShape(path string, keep bool) (shape, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return shape{}, err
 	}
 	defer f.Close()
 	r := csv.NewReader(bufio.NewReaderSize(f, 1<<20))
-	r.ReuseRecord = true
+	r.ReuseRecord = !keep
 	header, err := r.Read()
 	if err != nil {
 		return shape{}, fmt.Errorf("reading the CSV header: %w", err)
 	}
 	s := shape{Cols: len(header)}
 	for {
-		if _, err := r.Read(); err == io.EOF {
+		record, err := r.Read()
+		if err == io.EOF {
 			return s, nil
 		} else if err != nil {
 			return s, fmt.Errorf("reading CSV row %d: %w", s.Rows+1, err)
 		}
 		s.Rows++
+		if keep {
+			s.values = append(s.values, record)
+		}
 	}
 }
 
@@ -94,7 +101,8 @@ func psqlTool() tool {
 	return cliTool{
 		name: "psql",
 		env:  []string{"PGPASSWORD=bench"},
-		argv: func(sql, out string) []string {
+		argv: func(c benchCase, out string) []string {
+			sql := c.SQL
 			return []string{"psql", "-X", "-q", "--csv", "-h", "127.0.0.1", "-p", "55432", "-U", "bench", "-d", "bench", "-o", out, "-c", sql}
 		},
 	}
@@ -105,7 +113,8 @@ func psqlTool() tool {
 func clickhouseClientTool(bin string) tool {
 	return cliTool{
 		name: "clickhouse-client",
-		argv: func(sql, out string) []string {
+		argv: func(c benchCase, out string) []string {
+			sql := c.SQL
 			return []string{bin, "client", "--host", "127.0.0.1", "--port", "59000", "--user", "bench", "--password", "bench",
 				"--database", "bench", "--query", fmt.Sprintf("%s INTO OUTFILE '%s' TRUNCATE FORMAT CSVWithNames", sql, out)}
 		},
@@ -117,7 +126,8 @@ func clickhouseClientTool(bin string) tool {
 func snowTool(binDir string) tool {
 	return cliTool{
 		name: "snow",
-		argv: func(sql, out string) []string {
+		argv: func(c benchCase, out string) []string {
+			sql := c.SQL
 			return []string{filepath.Join(binDir, "snow-venv", "bin", "snow"), "--config-file", filepath.Join(binDir, "snow", "config.toml"),
 				"sql", "-c", "bench", "-q", sql, "-o", "output_format=csv", "-o", "quiet=true", "-o", "output_file=" + out}
 		},
@@ -127,21 +137,31 @@ func snowTool(binDir string) tool {
 func usqlTool(bin, dsn string) tool {
 	return cliTool{
 		name: "usql",
-		argv: func(sql, out string) []string {
-			return []string{bin, "-X", "-q", "--csv", "-o", out, "-c", sql, dsn}
+		argv: func(c benchCase, out string) []string {
+			return []string{bin, "-X", "-q", "--csv", "-o", out, "-c", c.SQL, dsn}
 		},
 	}
 }
 
 // anfraCLITool is `anfra query export`, in repoDir: cold when no server runs
-// for that repo, warm (forwarded to it) when one does.
+// for that repo, warm (forwarded to it) when one does. A SQL case runs on the
+// data source; a semantic case runs its AQL on the semantic dataset.
 func anfraCLITool(name, repoDir, source string) tool {
 	return cliTool{
 		name: name,
 		dir:  repoDir,
-		argv: func(sql, out string) []string {
-			return []string{"anfra", "--non-interactive", "query", "export", "--lang", "sql", "-s", source,
-				"--cache.duration", "0s", "--format-options.header", "names", "-o", out, sql}
+		argv: func(c benchCase, out string) []string {
+			argv := []string{"anfra", "--non-interactive", "query", "export"}
+			if c.Semantic != nil {
+				argv = append(argv, "--dataset", semanticDataset)
+			} else {
+				argv = append(argv, "--lang", "sql", "-s", source)
+			}
+			query := c.SQL
+			if c.Semantic != nil {
+				query = c.Semantic.AQL
+			}
+			return append(argv, "--cache.duration", "0s", "--format-options.header", "names", "-o", out, query)
 		},
 	}
 }
@@ -158,10 +178,14 @@ func (anfraHTTPTool) Name() string { return "anfra-http" }
 func (anfraHTTPTool) Path() string { return "http" }
 
 func (t anfraHTTPTool) Run(ctx context.Context, c benchCase) (time.Duration, shape, error) {
-	body, _ := json.Marshal(map[string]any{
+	request := map[string]any{
 		"query": c.SQL, "lang": "sql", "data_source": t.source,
 		"cache": map[string]any{"duration": "0s"},
-	})
+	}
+	if c.Semantic != nil {
+		request = map[string]any{"query": c.Semantic.AQL, "dataset": semanticDataset, "cache": map[string]any{"duration": "0s"}}
+	}
+	body, _ := json.Marshal(request)
 	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, t.base+"/api/core.query", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/x-ndjson")
@@ -196,6 +220,11 @@ func (t anfraHTTPTool) Run(ctx context.Context, c benchCase) (time.Duration, sha
 			s.Cols = len(ev.Columns)
 		case "rows":
 			s.Rows += len(ev.Records)
+			if c.Semantic != nil {
+				for _, record := range ev.Records {
+					s.values = append(s.values, textRow(record))
+				}
+			}
 		case "end":
 			if ev.Status != "ok" && ev.Status != "success" && len(ev.Error) > 0 {
 				failure = fmt.Errorf("stream ended %s: %s", ev.Status, ev.Error)

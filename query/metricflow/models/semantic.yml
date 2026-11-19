@@ -1,0 +1,78 @@
+version: 2
+
+semantic_models:
+  - name: lineitem
+    description: TPC-H's line items, one row per line of an order. Revenue is summed here.
+    model: ref('lineitem')
+    defaults:
+      agg_time_dimension: ship_date
+    entities:
+      # TPC-H keys a line by its order and line number; this one number is that pair.
+      - { name: line, type: primary, expr: "l_orderkey::bigint * 10 + l_linenumber" }
+      - { name: order, type: foreign, expr: l_orderkey }
+    dimensions:
+      - { name: ship_date, type: time, expr: l_shipdate, type_params: { time_granularity: day } }
+      - { name: receipt_date, type: time, expr: l_receiptdate, type_params: { time_granularity: day } }
+      - { name: orderkey, type: categorical, expr: l_orderkey }
+      - { name: extended_price, type: categorical, expr: l_extendedprice }
+      - { name: quantity, type: categorical, expr: l_quantity }
+      - { name: discount, type: categorical, expr: l_discount }
+      - { name: tax, type: categorical, expr: l_tax }
+      - { name: return_flag, type: categorical, expr: l_returnflag }
+      - { name: line_status, type: categorical, expr: l_linestatus }
+      - { name: ship_mode, type: categorical, expr: l_shipmode }
+    measures:
+      - { name: revenue, agg: sum, expr: "l_extendedprice * (1 - l_discount)" }
+      - { name: avg_discount, agg: average, expr: l_discount }
+
+  - name: orders
+    description: TPC-H's orders, one row per order.
+    model: ref('orders')
+    defaults:
+      agg_time_dimension: order_date
+    entities:
+      - { name: order, type: primary, expr: o_orderkey }
+      - { name: customer, type: foreign, expr: o_custkey }
+    dimensions:
+      - { name: order_date, type: time, expr: o_orderdate, type_params: { time_granularity: day } }
+      - { name: order_status, type: categorical, expr: o_orderstatus }
+      - { name: order_priority, type: categorical, expr: o_orderpriority }
+      - { name: clerk, type: categorical, expr: o_clerk }
+      - { name: total_price, type: categorical, expr: o_totalprice }
+    measures:
+      - { name: order_count, agg: count, expr: o_orderkey }
+
+  - name: customer
+    description: TPC-H's customers.
+    model: ref('customer')
+    entities:
+      - { name: customer, type: primary, expr: c_custkey }
+      - { name: nation, type: foreign, expr: c_nationkey }
+    dimensions:
+      - { name: name, type: categorical, expr: c_name }
+      - { name: market_segment, type: categorical, expr: c_mktsegment }
+      - { name: address, type: categorical, expr: c_address }
+      - { name: phone, type: categorical, expr: c_phone }
+      - { name: account_balance, type: categorical, expr: c_acctbal }
+
+  - name: nation
+    description: TPC-H's nations, each in a region.
+    model: ref('nation')
+    entities:
+      - { name: nation, type: primary, expr: n_nationkey }
+      - { name: region, type: foreign, expr: n_regionkey }
+    dimensions:
+      - { name: name, type: categorical, expr: n_name }
+
+  - name: region
+    description: TPC-H's regions.
+    model: ref('region')
+    entities:
+      - { name: region, type: primary, expr: r_regionkey }
+    dimensions:
+      - { name: name, type: categorical, expr: r_name }
+
+metrics:
+  - { name: revenue, label: Revenue, type: simple, type_params: { measure: revenue } }
+  - { name: order_count, label: Orders, type: simple, type_params: { measure: order_count } }
+  - { name: avg_discount, label: Average discount, type: simple, type_params: { measure: avg_discount } }

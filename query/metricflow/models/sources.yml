@@ -1,0 +1,5 @@
+version: 2
+sources:
+  - name: tpch
+    schema: tpch
+    tables: [{ name: region }, { name: nation }, { name: customer }, { name: orders }, { name: lineitem }]

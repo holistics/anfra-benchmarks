@@ -1,0 +1,37 @@
+// TPC-H's line items: one row per line of an order. The semantic group's revenue is summed here.
+Model lineitem {
+  type: 'table'
+  label: 'Line items'
+  data_source_name: 'bench_pg'
+  table_name: 'tpch.lineitem'
+
+  // TPC-H keys a line by its order and line number; this one number is that pair (a line number is 1 to 7).
+  dimension line_id {
+    label: 'Line'
+    type: 'number'
+    primary_key: true
+    definition: @sql {{ #SOURCE.l_orderkey }}::bigint * 10 + {{ #SOURCE.l_linenumber }};;
+  }
+  dimension l_orderkey { label: 'Order key' type: 'number' hidden: true definition: @sql {{ #SOURCE.l_orderkey }};; }
+  dimension l_extendedprice { label: 'Extended price' type: 'number' definition: @sql {{ #SOURCE.l_extendedprice }};; }
+  dimension l_discount { label: 'Discount' type: 'number' definition: @sql {{ #SOURCE.l_discount }};; }
+  dimension l_quantity { label: 'Quantity' type: 'number' definition: @sql {{ #SOURCE.l_quantity }};; }
+  dimension l_tax { label: 'Tax' type: 'number' definition: @sql {{ #SOURCE.l_tax }};; }
+  dimension l_returnflag { label: 'Return flag' type: 'text' definition: @sql {{ #SOURCE.l_returnflag }};; }
+  dimension l_linestatus { label: 'Line status' type: 'text' definition: @sql {{ #SOURCE.l_linestatus }};; }
+  dimension l_shipdate { label: 'Ship date' type: 'date' definition: @sql {{ #SOURCE.l_shipdate }};; }
+  dimension l_receiptdate { label: 'Receipt date' type: 'date' definition: @sql {{ #SOURCE.l_receiptdate }};; }
+  dimension l_shipmode { label: 'Ship mode' type: 'text' definition: @sql {{ #SOURCE.l_shipmode }};; }
+
+  measure revenue {
+    label: 'Revenue'
+    type: 'number'
+    description: 'The extended price less the discount, summed over line items.'
+    definition: @aql sum(lineitem.l_extendedprice * (1 - lineitem.l_discount)) ;;
+  }
+  measure avg_discount {
+    label: 'Average discount'
+    type: 'number'
+    definition: @aql avg(lineitem.l_discount) ;;
+  }
+}

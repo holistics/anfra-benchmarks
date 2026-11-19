@@ -1,1 +1,6 @@
 # No query cache: every run reaches the warehouse.
+# AQL compiler v2: it compiles the semantic group's AQL; the SQL group's queries are SQL, which
+# it does not touch.
+aql:
+  compiler:
+    version: v2

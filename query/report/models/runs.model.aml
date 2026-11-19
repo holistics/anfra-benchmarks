@@ -8,17 +8,25 @@ Model runs {
       -- The machine is the results folder's name: ../results/<machine>/batch<N>.jsonl.
       parse_filename(parse_dirpath(filename)) AS machine,
       batch, db, tool, path, "case" AS case_name, round, ms, rows, cols, ok,
+      -- Runs written before the semantic group have no group: they are SQL runs.
+      COALESCE("group", 'sql') AS run_group,
+      not_run,
       concat_ws(':', machine, batch, db, tool, "case", round) AS run_id,
       -- Cases in result-size order, tools in the order the tables use.
       CASE "case"
         WHEN 'select1' THEN 1 WHEN 'narrow_1' THEN 2 WHEN 'narrow_1k' THEN 3
         WHEN 'narrow_100k' THEN 4 WHEN 'narrow_1m' THEN 5 WHEN 'medium_100k' THEN 6
         WHEN 'wide_1' THEN 7 WHEN 'wide_1k' THEN 8 WHEN 'wide_100k' THEN 9
+        WHEN 'total' THEN 11 WHEN 'by_month' THEN 12 WHEN 'by_nation' THEN 13
+        WHEN 'fan_out' THEN 14 WHEN 'share_of_total' THEN 15 WHEN 'by_customer' THEN 16
+        WHEN 'list_1k' THEN 21 WHEN 'list_10k' THEN 22 WHEN 'list_100k' THEN 23 WHEN 'list_1m' THEN 24
+        WHEN 'list_100k_medium' THEN 25 WHEN 'list_100k_wide' THEN 26
         ELSE 99 END AS case_order,
       CASE tool
         WHEN 'psql' THEN 1 WHEN 'clickhouse-client' THEN 1 WHEN 'snow' THEN 1
         WHEN 'usql' THEN 2 WHEN 'anfra-cli-cold' THEN 3 WHEN 'anfra-cli-warm' THEN 4
         WHEN 'anfra-http' THEN 5 WHEN 'superset' THEN 6 WHEN 'metabase' THEN 7
+        WHEN 'metricflow' THEN 4 WHEN 'cube' THEN 8
         ELSE 99 END AS tool_order
     FROM read_json_auto('../results/*/*.jsonl', union_by_name = true, filename = true)
   ;;
@@ -29,6 +37,18 @@ Model runs {
     type: 'text'
     description: 'The machine the runs were measured on: the name of their results folder. Compare tools only within one machine.'
     definition: @sql {{ #SOURCE.machine }};;
+  }
+  dimension run_group {
+    label: 'Group'
+    type: 'text'
+    description: 'The group of cases: sql (the same SQL for every tool) or semantic (each tool\'s semantic query, on TPC-H). Compare tools only within one group.'
+    definition: @sql {{ #SOURCE.run_group }};;
+  }
+  dimension not_run {
+    label: 'Not run'
+    type: 'text'
+    description: 'Why the tool does not run this case, and what it would need to: set on one record instead of runs.'
+    definition: @sql {{ #SOURCE.not_run }};;
   }
   dimension batch { label: 'Batch' type: 'number' definition: @sql {{ #SOURCE.batch }};; }
   dimension db { label: 'Warehouse' type: 'text' definition: @sql {{ #SOURCE.db }};; }
@@ -65,9 +85,16 @@ Model runs {
     type: 'number'
     definition: @aql count(runs.run_id) | where(runs.ok == true) ;;
   }
+  measure record_count {
+    label: 'Records'
+    type: 'number'
+    description: 'Every record: measured runs, and the one record of a case a tool does not run. A query that should keep not-run cases (whose other measures are empty) includes it.'
+    definition: @aql count(runs.run_id) ;;
+  }
   measure failed_runs {
     label: 'Failed runs'
     type: 'number'
-    definition: @aql count(runs.run_id) | where(runs.ok == false) ;;
+    description: 'Runs whose result had other rows, columns or values than the case expects. A case a tool does not run is not a failure.'
+    definition: @aql count(runs.run_id) | where(runs.ok == false and runs.not_run is null) ;;
   }
 }
