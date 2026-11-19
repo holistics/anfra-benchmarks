@@ -32,12 +32,9 @@ path.
 | `wide_1k` | 32.0 (33.5) | 108 (110) | 175 (178) | 28.8 (30.7) | 21.4 (22.1) | 155 (162) | 62.7 (68.6) |
 | `wide_100k` | 417 (431) | 8250 (8308) | 1863 (1878) | 1692 (1726) | 1224 (1260) | 9758 (10.1s) | 4183 (4249) |
 
-![The report for batch 2: each tool's median time per case on a log scale, then
-Superset and Metabase against anfra HTTP as the baseline, per case](batch2.png)
+![Batch 2 in the report: each tool's median time per case, Postgres, SQL cases](batch2.png)
 
-*The [report](../../report/) on batch 2. Top: each tool's median per case, log
-scale, with a whisker to the slowest run. Bottom: Superset and Metabase against
-anfra HTTP; every bar is to the right of 1×, so both are slower on every case.*
+*The [report](../../report/) on batch 2: one panel per case, each on its own linear scale, a bar per tool for its median run. Compare tools within a panel, and only within a path: psql, usql and anfra CLI write a CSV file; anfra HTTP, Superset and Metabase answer over HTTP.*
 
 ## What stands out
 

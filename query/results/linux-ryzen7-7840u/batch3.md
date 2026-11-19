@@ -35,6 +35,10 @@ path.
 | `wide_1k` | 75.1 (85.0) | 125 (145) | 198 (220) | 41.1 (44.2) | 35.1 (43.9) | 165 (179) | 93.5 (103) |
 | `wide_100k` | 158 (180) | 8799 (10.1s) | 1900 (1974) | 1680 (2044) | 1169 (1353) | 9838 (10.4s) | 5667 (8390) |
 
+![Batch 3 in the report: each tool's median time per case, ClickHouse, SQL cases](batch3.png)
+
+*The [report](../../report/) on batch 3: one panel per case, each on its own linear scale, a bar per tool for its median run. Compare tools within a panel, and only within a path: clickhouse-client, usql and anfra CLI write a CSV file; anfra HTTP, Superset and Metabase answer over HTTP.*
+
 ## What stands out
 
 ### File: clickhouse-client is 3–22× faster than anfra on large results

@@ -52,6 +52,10 @@ each time is the warehouse's.
    model. See [batch 5](batch5.md#results) and
    [cases/semantic/metricflow.json](../../cases/semantic/metricflow.json).
 
+![Batch 6 in the report: each tool's median time per semantic case, ClickHouse](batch6.png)
+
+*The [report](../../report/) on batch 6: one panel per case, each on its own linear scale, a bar per tool for its median run. Compare tools within a panel, and only within a path: anfra CLI and MetricFlow write a CSV file; anfra HTTP and Cube answer over HTTP. MetricFlow appears only in the cases it runs.*
+
 ## What stands out
 
 ### Correctness: every tool that ran a case returned the right numbers

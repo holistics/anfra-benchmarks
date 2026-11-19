@@ -575,6 +575,10 @@
       const rows = byCase.result.rows;
       const container = document.getElementById('by-case-grid');
       const cases = caseList(rows);
+      // Every panel lists the same tools, in the same order (the model's tool_order), each in the
+      // same slot: a tool with no runs on a case keeps its row, marked "not run".
+      const tools = [...new Map(rows.map((r) => [r.tool, Number(r.tool_order)])).entries()]
+        .sort((a, b) => a[1] - b[1]).map(([tool]) => tool);
       for (const [name, chart] of caseCharts) {
         if (!cases.includes(name)) { chart.dispose(); caseCharts.delete(name); }
       }
@@ -588,12 +592,10 @@
           container.append(panel); // on the page before ECharts measures it
         }
         panels.push(panel);
-        const caseRows = rows
-          .filter((r) => r.case_name === name && r.median_ms !== null)
-          .sort((a, b) => Number(a.tool_order) - Number(b.tool_order));
+        const caseRows = tools.map((tool) => rows.find((r) => r.case_name === name && r.tool === tool && r.median_ms !== null) ?? { tool, median_ms: null });
         const chartEl = panel.lastElementChild;
         chartEl.style.height = `${caseRows.length * 24 + 16}px`;
-        const longest = Math.max(...caseRows.map((r) => Number(r.median_ms)));
+        const longest = Math.max(...caseRows.filter((r) => r.median_ms !== null).map((r) => Number(r.median_ms)));
         let chart = caseCharts.get(name);
         if (!chart) { chart = echarts.init(chartEl); caseCharts.set(name, chart); }
         chart.resize();
@@ -605,7 +607,8 @@
             trigger: 'item',
             formatter: (p) => {
               const r = caseRows[p.dataIndex];
-              return `<b>${name}</b>, ${toolLabel(r.tool)}<br>median ${formatMs(r.median_ms)} ms<br>slowest ${formatMs(r.slowest_ms)} ms`;
+              return r.median_ms === null ? `<b>${name}</b>, ${toolLabel(r.tool)}: not run`
+                : `<b>${name}</b>, ${toolLabel(r.tool)}<br>median ${formatMs(r.median_ms)} ms<br>slowest ${formatMs(r.slowest_ms)} ms`;
             },
           },
           // Room past the longest bar for its label.
@@ -615,7 +618,10 @@
                    axisLine: { lineStyle: { color: theme.grid } } },
           series: [{
             type: 'bar', id: 'median', barWidth: '64%',
-            data: caseRows.map((r) => ({ value: Number(r.median_ms), itemStyle: { color: toolColor(r.tool, theme), borderRadius: [0, 3, 3, 0] } })),
+            data: caseRows.map((r) => (r.median_ms === null
+              // No bar; a zero-length one carries the "not run" label.
+              ? { value: 0, itemStyle: { color: 'transparent' }, label: { formatter: 'not run', fontStyle: 'italic' } }
+              : { value: Number(r.median_ms), itemStyle: { color: toolColor(r.tool, theme), borderRadius: [0, 3, 3, 0] } })),
             label: { show: true, position: 'right', color: theme.text, fontSize: 11,
                      formatter: (p) => `${formatMs(caseRows[p.dataIndex].median_ms)} ms` },
           }],
