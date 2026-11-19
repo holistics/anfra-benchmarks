@@ -1,0 +1,13 @@
+# The benchmark Postgres (docker-compose.yml). Bench-only credentials.
+bench:
+  target: bench
+  outputs:
+    bench:
+      type: postgres
+      host: 127.0.0.1
+      port: 55432
+      user: bench
+      password: bench
+      dbname: bench
+      schema: mf
+      threads: 1

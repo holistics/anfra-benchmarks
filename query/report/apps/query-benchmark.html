@@ -119,6 +119,8 @@
     table.results thead tr:first-child th { font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; }
     table.results .slowest { color: var(--muted-foreground); font-size: 12px; margin-left: 4px; }
     table.results .failed { color: var(--destructive, #d4527a); font-size: 12px; margin-left: 4px; }
+    table.results .not-run { color: var(--muted-foreground); font-style: italic; cursor: help;
+                             text-decoration: underline dotted; }
     table.results td.case { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
     .notes { display: flex; flex-direction: column; gap: 4px; }
 
@@ -167,6 +169,19 @@
             <div role="listbox" id="machine-listbox" aria-orientation="vertical" data-empty="No machines."></div>
           </div>
           <input type="hidden" name="machine" value="">
+        </div>
+      </div>
+
+      <div class="field-group" data-anfra-block="group-picker" data-anfra-label="Cases" data-anfra-control="runGroup">
+        <label for="group-input">Cases</label>
+        <div id="group-combobox" class="combobox" style="width: 200px" data-auto-highlight="true">
+          <input id="group-input" type="text" role="combobox" placeholder="Cases" autocomplete="off"
+                 autocorrect="off" spellcheck="false" aria-autocomplete="list" aria-expanded="false"
+                 aria-controls="group-listbox">
+          <div data-popover aria-hidden="true">
+            <div role="listbox" id="group-listbox" aria-orientation="vertical" data-empty="No cases."></div>
+          </div>
+          <input type="hidden" name="group" value="">
         </div>
       </div>
 
@@ -369,8 +384,12 @@
       'anfra-http': { label: 'anfra HTTP', color: 6 },
       'superset': { label: 'Superset', color: 2 },
       'metabase': { label: 'Metabase', color: 4 },
+      'metricflow': { label: 'MetricFlow', color: 7 },
+      'cube': { label: 'Cube', color: 3 },
     };
     const toolLabel = (tool) => TOOLS[tool]?.label ?? tool;
+    const GROUPS = { sql: 'SQL', semantic: 'Semantic (TPC-H)' };
+    const groupLabel = (group) => GROUPS[group] ?? group;
     const PATH_LABEL = { file: 'CSV file', http: 'HTTP' };
     const toolWithPath = (tool, path) => {
       const label = toolLabel(tool), pathLabel = PATH_LABEL[path] ?? path;
@@ -430,11 +449,13 @@
         explore {
           dimensions {
             case_order: runs.case_order, case_name: runs.case_name,
-            path: runs.path, tool_order: runs.tool_order, tool: runs.tool
+            path: runs.path, tool_order: runs.tool_order, tool: runs.tool,
+            not_run: runs.not_run
           }
           measures {
             median_ms: runs.median_ms, slowest_ms: runs.slowest_ms,
-            ok_runs: runs.ok_runs, failed_runs: runs.failed_runs
+            ok_runs: runs.ok_runs, failed_runs: runs.failed_runs,
+            records: runs.record_count
           }
           sorts { case_order asc, tool_order asc }
         }
@@ -480,6 +501,7 @@
             round: runs.round, ms: runs.ms, result_rows: runs.result_rows,
             result_cols: runs.result_cols, ok: runs.ok, run_id: runs.run_id
           }
+          filters { runs.not_run is null }
           sorts { case_order asc, tool_order asc, round asc, run_id asc }
         }
       `,
@@ -491,6 +513,7 @@
     // One machine, batch and warehouse at a time: their runs are not comparable with each other's.
     const machine = app.createFilter('machine', { dataset: DATASET, field: 'runs.machine', label: 'Machine' });
     const batch = app.createFilter('batch', { dataset: DATASET, field: 'runs.batch', label: 'Batch' });
+    const runGroup = app.createFilter('runGroup', { dataset: DATASET, field: 'runs.run_group', label: 'Cases' });
     const db = app.createFilter('db', { dataset: DATASET, field: 'runs.db', label: 'Warehouse' });
     const path = app.createFilter('path', { type: 'string', options: ['file', 'http'], default: { operator: 'is', values: ['file', 'http'] } });
 
@@ -498,6 +521,7 @@
       app.mapControl(machine, query, { field: 'runs.machine' });
       app.mapControl(batch, query, { field: 'runs.batch' });
       app.mapControl(db, query, { field: 'runs.db' });
+      app.mapControl(runGroup, query, { field: 'runs.run_group' });
     }
     app.mapControl(path, byCase, { field: 'runs.path' });
     app.mapControl(path, compare, { field: 'runs.path' });
@@ -608,7 +632,8 @@
     // The reader's picks, in order; the first is the baseline. Null until the first result picks the
     // defaults: Superset and Metabase against anfra HTTP as the baseline, or else the first two tools.
     let picks = null;
-    const DEFAULT_PICKS = ['anfra-http', 'superset', 'metabase'];
+    const DEFAULT_PICKS = { sql: ['anfra-http', 'superset', 'metabase'], semantic: ['anfra-http', 'cube'] };
+    let picksGroup = null;
 
     // The tools in the latest result, in the table's order, each with its path.
     function availableTools () {
@@ -621,10 +646,14 @@
 
     function currentPicks (available) {
       const names = available.map((t) => t.tool);
+      // Another group has other tools: start again from its defaults.
+      const group = runGroup.condition?.values?.[0] ?? 'sql';
+      if (picksGroup !== group) { picks = null; picksGroup = group; }
       if (picks === null && available.length > 0) {
-        // anfra HTTP as the baseline, then whichever of the BI tools this batch has.
-        const preferred = DEFAULT_PICKS.filter((tool) => names.includes(tool));
-        picks = preferred[0] === DEFAULT_PICKS[0] && preferred.length >= 2 ? preferred : names.slice(0, 2);
+        // anfra HTTP as the baseline, then whichever of the group's default tools this batch has.
+        const defaults = DEFAULT_PICKS[group] ?? DEFAULT_PICKS.sql;
+        const preferred = defaults.filter((tool) => names.includes(tool));
+        picks = preferred[0] === defaults[0] && preferred.length >= 2 ? preferred : names.slice(0, 2);
       }
       return (picks ?? []).filter((tool) => names.includes(tool));
     }
@@ -794,6 +823,8 @@
           const row = rows.find((r) => r.case_name === name && r.tool === c.tool);
           if (!row) {
             td.textContent = '–';
+          } else if (row.not_run) {
+            td.append(Object.assign(document.createElement('span'), { className: 'not-run', textContent: 'not run', title: row.not_run }));
           } else {
             if (row.median_ms !== null) {
               td.append(document.createTextNode(formatMs(row.median_ms)));
@@ -865,6 +896,11 @@
     }
 
     function renderPreview () {
+      // The preview shows the SQL group's cases; the semantic cases are TPC-H queries, each tool's
+      // form of them and their answer in cases/semantic.
+      const semantic = (runGroup.condition?.values?.[0] ?? 'sql') === 'semantic';
+      document.querySelector('[data-anfra-block="case-preview"]').hidden = semantic;
+      if (semantic) return;
       renderStatus(sample, 'preview-status', 'No sample rows.');
       logFirstResult(caseDefs);
       logFirstResult(sample);
@@ -1020,7 +1056,7 @@
       dataset: DATASET,
       aql: `
         explore {
-          dimensions { machine: runs.machine, batch: runs.batch, db: runs.db }
+          dimensions { machine: runs.machine, run_group: runs.run_group, batch: runs.batch, db: runs.db }
           measures { run_count: runs.ok_runs }
           sorts { machine asc, batch asc, db asc }
         }
@@ -1030,16 +1066,18 @@
     const SCOPE_PICKERS = [
       { filter: machine, id: 'machine', options: (rows) => rows.map((r) => r.machine),
         fallback: (values) => values[0] },
-      { filter: db, id: 'db', options: (rows, picked) => rows.filter((r) => r.machine === picked.machine).map((r) => r.db),
+      { filter: runGroup, id: 'group', options: (rows, picked) => rows.filter((r) => r.machine === picked.machine).map((r) => r.run_group),
+        fallback: (values) => (values.includes('sql') ? 'sql' : values[0]), label: groupLabel },
+      { filter: db, id: 'db', options: (rows, picked) => rows.filter((r) => r.machine === picked.machine && r.run_group === picked.group).map((r) => r.db),
         fallback: (values) => (values.includes('postgres') ? 'postgres' : values[0]) },
-      { filter: batch, id: 'batch', options: (rows, picked) => rows.filter((r) => r.machine === picked.machine && r.db === picked.db).map((r) => r.batch),
+      { filter: batch, id: 'batch', options: (rows, picked) => rows.filter((r) => r.machine === picked.machine && r.run_group === picked.group && r.db === picked.db).map((r) => r.batch),
         fallback: (values) => [...values].sort((a, b) => Number(b) - Number(a))[0] },
     ];
     let scopesReady = false;
 
     // Settles each picker on a value its scope has, top-down, and says whether any changed.
     function settleScopes () {
-      const rows = (scopes.result?.rows ?? []).map((r) => ({ machine: String(r.machine), batch: String(r.batch), db: String(r.db) }));
+      const rows = (scopes.result?.rows ?? []).map((r) => ({ machine: String(r.machine), run_group: String(r.run_group), batch: String(r.batch), db: String(r.db) }));
       const picked = {};
       let changed = false;
       for (const picker of SCOPE_PICKERS) {
@@ -1056,7 +1094,7 @@
             const option = document.createElement('div');
             option.setAttribute('role', 'option');
             option.dataset.value = v;
-            option.textContent = v;
+            option.textContent = picker.label ? picker.label(v) : v;
             return option;
           }));
           box.refresh?.();

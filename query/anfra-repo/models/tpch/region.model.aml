@@ -1,0 +1,10 @@
+// TPC-H's regions.
+Model region {
+  type: 'table'
+  label: 'Regions'
+  data_source_name: 'bench_pg'
+  table_name: 'tpch.region'
+
+  dimension r_regionkey { label: 'Region key' type: 'number' primary_key: true definition: @sql {{ #SOURCE.r_regionkey }};; }
+  dimension r_name { label: 'Region' type: 'text' definition: @sql {{ #SOURCE.r_name }};; }
+}

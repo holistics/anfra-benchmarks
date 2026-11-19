@@ -1,0 +1,16 @@
+explore {
+  dimensions {
+    line_id: lineitem.line_id,
+    extended_price: lineitem.l_extendedprice,
+    quantity: lineitem.l_quantity,
+    discount: lineitem.l_discount,
+    ship_date: lineitem.l_shipdate,
+    ship_mode: lineitem.l_shipmode,
+    order_date: orders.o_orderdate,
+    order_status: orders.o_orderstatus,
+    customer_name: customer.c_name,
+    market_segment: customer.c_mktsegment
+  }
+  filters { lineitem.l_orderkey <= 100000 }
+  sorts { line_id asc }
+}

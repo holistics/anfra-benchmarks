@@ -14,6 +14,8 @@ type benchCase struct {
 	Rows    int      `json:"rows"`
 	Cols    int      `json:"cols"`
 	Columns []string `json:"columns"`
+	// Semantic is a semantic case's forms and answer; nil for a SQL case.
+	Semantic *semanticCase `json:"-"`
 }
 
 // narrowColumns are 3 columns of bench_wide: bigint, short text, numeric.

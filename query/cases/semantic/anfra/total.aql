@@ -1,0 +1,3 @@
+explore {
+  measures { revenue: lineitem.revenue }
+}

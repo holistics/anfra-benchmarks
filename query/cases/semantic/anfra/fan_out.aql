@@ -1,0 +1,6 @@
+explore {
+  dimensions { nation: nation.n_name }
+  measures { order_count: orders.order_count, revenue: lineitem.revenue }
+  filters { customer.c_mktsegment == 'BUILDING' }
+  sorts { nation asc }
+}

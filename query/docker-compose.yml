@@ -10,6 +10,9 @@ services:
       POSTGRES_PASSWORD: bench
       POSTGRES_DB: bench
     command: ["postgres", "-c", "shared_buffers=1GB", "-c", "max_connections=200"]
+    # Parallel queries share memory through /dev/shm; Docker's default 64 MB runs out on TPC-H's
+    # large joins ("could not resize shared memory segment").
+    shm_size: 1gb
     ports:
       - "127.0.0.1:55432:5432"
     volumes:
@@ -74,6 +77,32 @@ services:
       - ./clickhouse/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     ulimits:
       nofile: { soft: 262144, hard: 262144 }
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # Cube, for the semantic group: its model in cube/model, on the host network like the BI tools,
+  # REST API on 127.0.0.1:58100. Production mode, no pre-aggregations, so no Cube Store: its cache
+  # and queue in memory. The row limit is raised so the 100k-row case returns whole. Bench-only secret.
+  cube:
+    image: cubejs/cube:v1.8.28
+    network_mode: host
+    environment:
+      PORT: "58100"
+      CUBEJS_DEV_MODE: "false"
+      CUBEJS_API_SECRET: bench-only-not-a-secret
+      CUBEJS_DB_TYPE: postgres
+      CUBEJS_DB_HOST: 127.0.0.1
+      CUBEJS_DB_PORT: "55432"
+      CUBEJS_DB_NAME: bench
+      CUBEJS_DB_USER: bench
+      CUBEJS_DB_PASS: bench
+      CUBEJS_CACHE_AND_QUEUE_DRIVER: memory
+      CUBEJS_DB_QUERY_LIMIT: "1000000"
+      CUBEJS_TELEMETRY: "false"
+      CUBEJS_LOG_LEVEL: warn
+    volumes:
+      - ./cube/model:/cube/conf/model:ro
     depends_on:
       postgres:
         condition: service_healthy

@@ -1,0 +1,323 @@
+{
+  "_doc": "Cube's form of each semantic case: the query to POST to /cubejs-api/v1/load, and the result's members in the case's column order. Cube's cache is kept from answering by each cube's one-second refresh key (cube/model/tpch.yml); limit returns every row (Cube's default is 10,000). A listing case is an ungrouped query: Cube lists rows without GROUP BY.",
+  "total": {
+    "query": {
+      "measures": [
+        "lineitem.revenue"
+      ]
+    },
+    "columns": [
+      "lineitem.revenue"
+    ]
+  },
+  "by_month": {
+    "query": {
+      "measures": [
+        "lineitem.revenue"
+      ],
+      "timeDimensions": [
+        {
+          "dimension": "orders.order_date",
+          "granularity": "month"
+        }
+      ],
+      "order": {
+        "orders.order_date": "asc"
+      }
+    },
+    "columns": [
+      "orders.order_date.month",
+      "lineitem.revenue"
+    ]
+  },
+  "by_nation": {
+    "query": {
+      "measures": [
+        "lineitem.revenue"
+      ],
+      "dimensions": [
+        "nation.name"
+      ],
+      "order": {
+        "nation.name": "asc"
+      }
+    },
+    "columns": [
+      "nation.name",
+      "lineitem.revenue"
+    ]
+  },
+  "fan_out": {
+    "query": {
+      "measures": [
+        "orders.order_count",
+        "lineitem.revenue"
+      ],
+      "dimensions": [
+        "nation.name"
+      ],
+      "filters": [
+        {
+          "member": "customer.market_segment",
+          "operator": "equals",
+          "values": [
+            "BUILDING"
+          ]
+        }
+      ],
+      "order": {
+        "nation.name": "asc"
+      }
+    },
+    "columns": [
+      "nation.name",
+      "orders.order_count",
+      "lineitem.revenue"
+    ]
+  },
+  "share_of_total": {
+    "query": {
+      "measures": [
+        "lineitem.revenue",
+        "lineitem.revenue_share"
+      ],
+      "dimensions": [
+        "nation.name"
+      ],
+      "order": {
+        "nation.name": "asc"
+      }
+    },
+    "columns": [
+      "nation.name",
+      "lineitem.revenue",
+      "lineitem.revenue_share"
+    ]
+  },
+  "by_customer": {
+    "query": {
+      "measures": [
+        "lineitem.revenue"
+      ],
+      "dimensions": [
+        "customer.name"
+      ],
+      "order": {
+        "customer.name": "asc"
+      },
+      "limit": 1000000
+    },
+    "columns": [
+      "customer.name",
+      "lineitem.revenue"
+    ]
+  },
+  "list_1k": {
+    "query": {
+      "dimensions": [
+        "lineitem.line_id",
+        "lineitem.extended_price"
+      ],
+      "filters": [
+        {
+          "member": "lineitem.orderkey",
+          "operator": "lte",
+          "values": [
+            "1000"
+          ]
+        }
+      ],
+      "ungrouped": true,
+      "order": {
+        "lineitem.line_id": "asc"
+      },
+      "limit": 1000000
+    },
+    "columns": [
+      "lineitem.line_id",
+      "lineitem.extended_price"
+    ]
+  },
+  "list_10k": {
+    "query": {
+      "dimensions": [
+        "lineitem.line_id",
+        "lineitem.extended_price"
+      ],
+      "filters": [
+        {
+          "member": "lineitem.orderkey",
+          "operator": "lte",
+          "values": [
+            "10000"
+          ]
+        }
+      ],
+      "ungrouped": true,
+      "order": {
+        "lineitem.line_id": "asc"
+      },
+      "limit": 1000000
+    },
+    "columns": [
+      "lineitem.line_id",
+      "lineitem.extended_price"
+    ]
+  },
+  "list_100k": {
+    "query": {
+      "dimensions": [
+        "lineitem.line_id",
+        "lineitem.extended_price"
+      ],
+      "filters": [
+        {
+          "member": "lineitem.orderkey",
+          "operator": "lte",
+          "values": [
+            "100000"
+          ]
+        }
+      ],
+      "ungrouped": true,
+      "order": {
+        "lineitem.line_id": "asc"
+      },
+      "limit": 1000000
+    },
+    "columns": [
+      "lineitem.line_id",
+      "lineitem.extended_price"
+    ]
+  },
+  "list_1m": {
+    "query": {
+      "dimensions": [
+        "lineitem.line_id",
+        "lineitem.extended_price"
+      ],
+      "filters": [
+        {
+          "member": "lineitem.orderkey",
+          "operator": "lte",
+          "values": [
+            "999000"
+          ]
+        }
+      ],
+      "ungrouped": true,
+      "order": {
+        "lineitem.line_id": "asc"
+      },
+      "limit": 1000000
+    },
+    "columns": [
+      "lineitem.line_id",
+      "lineitem.extended_price"
+    ]
+  },
+  "list_100k_medium": {
+    "query": {
+      "dimensions": [
+        "lineitem.line_id",
+        "lineitem.extended_price",
+        "lineitem.quantity",
+        "lineitem.discount",
+        "lineitem.ship_date",
+        "lineitem.ship_mode",
+        "orders.order_date",
+        "orders.order_status",
+        "customer.name",
+        "customer.market_segment"
+      ],
+      "filters": [
+        {
+          "member": "lineitem.orderkey",
+          "operator": "lte",
+          "values": [
+            "100000"
+          ]
+        }
+      ],
+      "ungrouped": true,
+      "order": {
+        "lineitem.line_id": "asc"
+      },
+      "limit": 1000000
+    },
+    "columns": [
+      "lineitem.line_id",
+      "lineitem.extended_price",
+      "lineitem.quantity",
+      "lineitem.discount",
+      "lineitem.ship_date",
+      "lineitem.ship_mode",
+      "orders.order_date",
+      "orders.order_status",
+      "customer.name",
+      "customer.market_segment"
+    ]
+  },
+  "list_100k_wide": {
+    "query": {
+      "dimensions": [
+        "lineitem.line_id",
+        "lineitem.extended_price",
+        "lineitem.quantity",
+        "lineitem.discount",
+        "lineitem.ship_date",
+        "lineitem.ship_mode",
+        "orders.order_date",
+        "orders.order_status",
+        "customer.name",
+        "customer.market_segment",
+        "lineitem.tax",
+        "lineitem.return_flag",
+        "lineitem.line_status",
+        "lineitem.receipt_date",
+        "orders.order_priority",
+        "orders.clerk",
+        "orders.total_price",
+        "customer.address",
+        "customer.phone",
+        "customer.account_balance"
+      ],
+      "filters": [
+        {
+          "member": "lineitem.orderkey",
+          "operator": "lte",
+          "values": [
+            "100000"
+          ]
+        }
+      ],
+      "ungrouped": true,
+      "order": {
+        "lineitem.line_id": "asc"
+      },
+      "limit": 1000000
+    },
+    "columns": [
+      "lineitem.line_id",
+      "lineitem.extended_price",
+      "lineitem.quantity",
+      "lineitem.discount",
+      "lineitem.ship_date",
+      "lineitem.ship_mode",
+      "orders.order_date",
+      "orders.order_status",
+      "customer.name",
+      "customer.market_segment",
+      "lineitem.tax",
+      "lineitem.return_flag",
+      "lineitem.line_status",
+      "lineitem.receipt_date",
+      "orders.order_priority",
+      "orders.clerk",
+      "orders.total_price",
+      "customer.address",
+      "customer.phone",
+      "customer.account_balance"
+    ]
+  }
+}

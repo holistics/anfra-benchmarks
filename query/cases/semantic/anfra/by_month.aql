@@ -1,0 +1,5 @@
+explore {
+  dimensions { order_month: orders.o_orderdate | month() }
+  measures { revenue: lineitem.revenue }
+  sorts { order_month asc }
+}

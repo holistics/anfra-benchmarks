@@ -1,0 +1,22 @@
+// TPC-H's orders: one row per order.
+Model orders {
+  type: 'table'
+  label: 'Orders'
+  data_source_name: 'bench_pg'
+  table_name: 'tpch.orders'
+
+  dimension o_orderkey { label: 'Order key' type: 'number' primary_key: true definition: @sql {{ #SOURCE.o_orderkey }};; }
+  dimension o_custkey { label: 'Customer key' type: 'number' hidden: true definition: @sql {{ #SOURCE.o_custkey }};; }
+  dimension o_orderdate { label: 'Order date' type: 'date' definition: @sql {{ #SOURCE.o_orderdate }};; }
+  dimension o_orderstatus { label: 'Order status' type: 'text' definition: @sql {{ #SOURCE.o_orderstatus }};; }
+  dimension o_orderpriority { label: 'Order priority' type: 'text' definition: @sql {{ #SOURCE.o_orderpriority }};; }
+  dimension o_clerk { label: 'Clerk' type: 'text' definition: @sql {{ #SOURCE.o_clerk }};; }
+  dimension o_totalprice { label: 'Total price' type: 'number' definition: @sql {{ #SOURCE.o_totalprice }};; }
+
+  measure order_count {
+    label: 'Orders'
+    type: 'number'
+    description: 'The number of orders, each counted once.'
+    definition: @aql count(orders.o_orderkey) ;;
+  }
+}
