@@ -34,9 +34,12 @@ cubes:
         type: sum
         grain:
           keep_only: []
+      # 1.0 * makes the division floating point, as anfra's AQL does (AMQL's percent-of-total recipe):
+      # on ClickHouse, dividing two Decimals keeps the dividend's 4 decimals, so the share would be
+      # cut to 0.0399. On Postgres it changes nothing.
       - name: revenue_share
         multi_stage: true
-        sql: "{revenue} / NULLIF({total_revenue}, 0)"
+        sql: "1.0 * {revenue} / NULLIF({total_revenue}, 0)"
         type: number
 
   - name: orders

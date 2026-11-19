@@ -7,3 +7,5 @@ anfra-repo/.anfra/data_sources.yml
 metricflow/target/
 metricflow/logs/
 cases/semantic/*.csv
+metricflow-ch/target/
+metricflow-ch/logs/

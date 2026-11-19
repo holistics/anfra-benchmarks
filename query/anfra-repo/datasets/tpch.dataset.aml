@@ -11,3 +11,10 @@ Dataset tpch {
     relationship(nation.n_regionkey > region.r_regionkey, true),
   ]
 }
+
+// The same dataset on ClickHouse (database tpch, copied from Postgres's by clickhouse/tpch.sh): the
+// same models and relationships, so the same AQL runs on either warehouse.
+Dataset tpch_ch = tpch.extend({
+  label: 'TPC-H (ClickHouse)'
+  data_source_name: 'bench_ch'
+})

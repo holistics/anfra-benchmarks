@@ -12,6 +12,8 @@ and how to run a batch.
 | `snowflake/` | `init.sql` creates the schema `ANFRA_BENCH` and `bench_wide` in Snowflake from the same formulas as Postgres, with checks against Postgres's values; `init.sh` runs it through anfra's `bench_sf` data source; `setup.py` connects every other tool from that data source |
 | `postgres/tpch.sql`, `postgres/tpch.sh` | the semantic group's data: TPC-H at scale factor 1 in the schema `tpch` (region, nation, customer, orders, lineitem), with the spec's primary keys and no other index. `tpch.sh` generates it with DuckDB and loads it with `COPY` |
 | `cube/model/` | Cube's model: TPC-H in YAML, a cube per table with its joins and primary key, a one-second refresh key on each (so no run is answered from Cube's cache), and the multi-stage measures for the share of total |
+| `clickhouse/tpch.sql`, `clickhouse/tpch.sh` | the semantic group's data in ClickHouse: TPC-H in the database `tpch`, copied from Postgres's (so the same answers apply), with matching types |
+| `metricflow-ch/` | MetricFlow on ClickHouse: links to `metricflow/`'s project and models, with its own `target/`, since `dbt-metricflow` always reads the semantic manifest from `<project>/target/` and the manifest names tables in its warehouse's dialect; its commands run with `DBT_TARGET=ch` |
 | `metricflow/` | MetricFlow's model: a minimal dbt project over TPC-H (a plain view per table in schema `mf`, a daily time spine MetricFlow requires, and the semantic models and metrics in `models/semantic.yml`), with bench-only credentials in `profiles.yml` |
 | `cases/semantic/` | the semantic group's cases: per case, a hand-written SQL query (`<case>.sql`), its definition, and its result (`<case>.csv`, written by `answers.sh` and git-ignored, since the listings' are large), which every tool must return, value by value (`check.py` compares a result with it); and each tool's form of the case: `anfra/<case>.aql`, `metricflow.json` (the `mf query` arguments, or why a case is not run), `cube.json` (the REST query, and its result's members in the case's column order) |
 | `clickhouse/init.sql` | creates `bench_wide` in ClickHouse with matching types, and copies its rows from Postgres on first start, so both hold the same values |
@@ -90,6 +92,14 @@ browser does.
 - **anfra's AQL compiler is v2** in `anfra-repo/` (`aql.compiler.version`). It
   compiles the semantic group's AQL; the SQL group's queries are SQL, which it
   doesn't touch.
+- **The semantic group on ClickHouse**: anfra's `tpch_ch` dataset extends `tpch`,
+  overriding only its data source, so the models and AQL are the same; Cube's
+  second container, `cube-ch` (58101), has the same model on ClickHouse's HTTP
+  port; MetricFlow runs in `metricflow-ch/` with `DBT_TARGET=ch`. Cube's share
+  of total multiplies by `1.0`, as anfra's AQL does, so its division is floating
+  point: on ClickHouse, dividing two Decimals keeps the dividend's 4 decimals
+  (0.0399 instead of 0.03997). Batch 5, on Postgres, ran before that change,
+  which changes nothing there.
 - **The listing cases** list rows without aggregating: anfra with an explore of
   dimensions only, Cube with `ungrouped: true`, MetricFlow with group-bys and no
   metric (its distinct values; the line's entity makes each row one line item).
@@ -124,7 +134,7 @@ machine.
 | ClickHouse server | 26.8.39.19 (LTS) | official Docker image `clickhouse/clickhouse-server` | Docker Hub | `docker compose` |
 | Snowflake | (the service) | – | – | an account; `snowflake/init.sh` creates the schema and table, `snowflake/setup.py` connects the tools |
 | DuckDB | 2.0.0 | the `duckdb` Python package, on the machine's Python 3.12, with its `tpch` extension (to generate TPC-H) | PyPI; the extension from DuckDB's extension server (extensions.duckdb.org), on `INSTALL tpch` | `uv`, into `.bin/duckdb-venv` |
-| MetricFlow | 0.214.0, through `dbt-metricflow` 0.16.0 | the `dbt-metricflow` package with dbt-core 1.12.7 and dbt-postgres 1.11.0, on the machine's Python 3.12 | PyPI | `uv`, into `.bin/mf-venv` |
+| MetricFlow | 0.214.0, through `dbt-metricflow` 0.16.0 | the `dbt-metricflow` package with dbt-core 1.12.7, dbt-postgres 1.11.0 and dbt-clickhouse 1.10.3, on the machine's Python 3.12 | PyPI | `uv`, into `.bin/mf-venv` |
 | psql | 15.18 | `postgresql-client-15` package, `15.18-1.pgdg24.04+1` | the PostgreSQL apt repository, apt.postgresql.org | the machine's package manager |
 | clickhouse-client | 26.8.39.19 | the official static build, `clickhouse-common-static-26.8.39.19-amd64.tgz`, checked against its `.sha512` | GitHub Releases, ClickHouse/ClickHouse, tag `v26.8.39.19-lts` | `curl` and `tar`, into `.bin/clickhouse` |
 | snow (Snowflake CLI) | 3.34.0 | the `snowflake-cli` package, on the machine's Python 3.12 | PyPI | `uv`, into `.bin/snow-venv` |
@@ -142,7 +152,7 @@ it installs into `.bin/` (git-ignored), with the commands below. Every tool reac
 every warehouse; `-db` picks the one a run measures.
 
 ```sh
-docker compose up -d --build        # Postgres (55432), ClickHouse (59000, 58123), Superset (58088), Metabase (58089), Cube (58100), on 127.0.0.1
+docker compose up -d --build        # Postgres (55432), ClickHouse (59000, 58123), Superset (58088), Metabase (58089), Cube (58100), Cube on ClickHouse (58101), on 127.0.0.1
 metabase/setup.sh                   # once Metabase answers on /api/health
 GOBIN=$PWD/.bin go install -tags clickhouse,snowflake github.com/xo/usql@v0.21.6
 go -C runner build -o ../.bin/runner .
@@ -160,7 +170,10 @@ cases/semantic/answers.sh            # each semantic case's answer, from its han
 
 # MetricFlow, with dbt; then its views, time spine and semantic manifest
 uv venv .bin/mf-venv --python 3.12 && uv pip install --python .bin/mf-venv/bin/python "dbt-metricflow[dbt-postgres]==0.16.0" dbt-core==1.12.7 dbt-postgres==1.11.0
+uv pip install --python .bin/mf-venv/bin/python dbt-clickhouse==1.10.3
 (cd metricflow && DBT_PROFILES_DIR=. ../.bin/mf-venv/bin/dbt run && DBT_PROFILES_DIR=. ../.bin/mf-venv/bin/dbt parse)
+clickhouse/tpch.sh                   # TPC-H in ClickHouse, copied from Postgres
+(cd metricflow-ch && export DBT_PROFILES_DIR=. DBT_TARGET=ch && ../.bin/mf-venv/bin/dbt run && ../.bin/mf-venv/bin/dbt parse)
 
 # snow (the Snowflake CLI), in its own environment, with uv
 uv venv .bin/snow-venv --python 3.12 && uv pip install --python .bin/snow-venv/bin/python snowflake-cli==3.34.0
@@ -172,6 +185,7 @@ snowflake/init.sh                              # the schema and bench_wide, thro
 mkdir -p results/<machine>                         # one folder per machine, such as linux-ryzen7-7840u
 .bin/runner -db postgres -batch <N> -out results/<machine>/batch<N>.jsonl     # every tool and case: 1 warm-up round, 5 measured
 .bin/runner -group semantic -batch <N> -out results/<machine>/batch<N>.jsonl  # the semantic group, on TPC-H in Postgres
+.bin/runner -group semantic -db clickhouse -batch <N> -out …                   # and in ClickHouse
 .bin/runner report results/<machine>/batch<N>.jsonl            # the table: median (slowest) ms per case and tool
 ```
 

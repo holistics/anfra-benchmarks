@@ -23,6 +23,7 @@ how to run a batch yourself.
 | 2 | Postgres | psql, usql, anfra (CLI cold, CLI warm, HTTP), Superset, **Metabase** | [batch2.md](results/linux-ryzen7-7840u/batch2.md) |
 | 3 | ClickHouse | clickhouse-client, usql, anfra (CLI cold, CLI warm, HTTP), Superset, Metabase | [batch3.md](results/linux-ryzen7-7840u/batch3.md) |
 | 5 | Postgres, semantic (TPC-H): 6 aggregate cases, 6 listing cases | anfra (CLI cold, CLI warm, HTTP), MetricFlow, Cube | [batch5.md](results/linux-ryzen7-7840u/batch5.md) |
+| 6 | ClickHouse, semantic (TPC-H): the same 12 cases | anfra (CLI cold, CLI warm, HTTP), MetricFlow, Cube | [batch6.md](results/linux-ryzen7-7840u/batch6.md) |
 
 All ran on one machine, `linux-ryzen7-7840u` (AMD Ryzen 7 PRO 7840U, 27 GiB,
 Linux).
@@ -114,6 +115,8 @@ query/
 ├── snowflake/           init.sql: the same table in Snowflake; setup.py: each tool's connection
 ├── superset/            Superset's image, start script and config
 ├── metabase/            setup.sh: Metabase's first-run setup
+├── cube/                Cube's model (semantic group)
+├── metricflow/          MetricFlow's dbt project (semantic group); metricflow-ch/ the same on ClickHouse
 └── anfra-repo/          the anfra repo under test: one data source, no models
 ```
 
@@ -175,7 +178,7 @@ For the semantic group, anfra runs AQL on both paths.
 | Superset | ✅ | ✅ | ✅ |
 | Metabase | ✅ | ✅ built-in driver | ✅ |
 | Cube | ✅ | ✅ | ✅ |
-| MetricFlow | ✅ | to confirm: `dbt-metricflow` 0.16 offers a `dbt-clickhouse` option | ✅ |
+| MetricFlow | ✅ | ✅ through `dbt-clickhouse` | ✅ |
 | Rill | ✗ not a query engine | ✅ live ³ | ✅ live ³ |
 
 1. Cube's SQL API speaks the Postgres protocol, so psql could write its result
@@ -346,10 +349,10 @@ run's floor.
 | **3** | ✅ done | ClickHouse | clickhouse-client, usql, anfra ×3, Superset, Metabase | 7 × 9 = 63 | ~10 min |
 | **4** | ⏸ parked: needs a stable connection close to Snowflake | Snowflake | snow, usql, anfra ×3, Superset, Metabase | 7 × 5 = 35 | ~15 min, a few credits |
 | **5** | ✅ done | Postgres | semantic: anfra (CLI cold, CLI warm, HTTP), MetricFlow, Cube | 5 × 12 = 60 (6 aggregate cases, 6 listing cases) | ~15 min |
-| **6** | | ClickHouse | semantic: anfra ×3, Cube, Rill | 5 × 6 = 30 | ~10 min |
+| **6** | ✅ done (Rill to come) | ClickHouse | semantic: anfra ×3, MetricFlow, Cube (Rill to come) | 5 × 12 = 60 | ~10 min |
 | **7** | | Snowflake | semantic: anfra ×3, Cube, MetricFlow, Rill | 6 × 6 = 36 | parked, as batch 4 |
 
-In all: 341 cells. The time is mostly the large cases on the slower tools
+In all: 371 cells. The time is mostly the large cases on the slower tools
 (in trial runs, usql and Superset spent about 70% of it), not the number of
 cells.
 
