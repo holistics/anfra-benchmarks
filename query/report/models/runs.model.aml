@@ -22,11 +22,12 @@ Model runs {
         WHEN 'list_1k' THEN 21 WHEN 'list_10k' THEN 22 WHEN 'list_100k' THEN 23 WHEN 'list_1m' THEN 24
         WHEN 'list_100k_medium' THEN 25 WHEN 'list_100k_wide' THEN 26
         ELSE 99 END AS case_order,
+      -- One rank per tool, the file path's first, so every chart and table orders them the same.
       CASE tool
-        WHEN 'psql' THEN 1 WHEN 'clickhouse-client' THEN 1 WHEN 'snow' THEN 1
-        WHEN 'usql' THEN 2 WHEN 'anfra-cli-cold' THEN 3 WHEN 'anfra-cli-warm' THEN 4
-        WHEN 'anfra-http' THEN 5 WHEN 'superset' THEN 6 WHEN 'metabase' THEN 7
-        WHEN 'metricflow' THEN 4 WHEN 'cube' THEN 8
+        WHEN 'psql' THEN 1 WHEN 'clickhouse-client' THEN 2 WHEN 'snow' THEN 3
+        WHEN 'usql' THEN 4 WHEN 'anfra-cli-cold' THEN 5 WHEN 'anfra-cli-warm' THEN 6
+        WHEN 'metricflow' THEN 7
+        WHEN 'anfra-http' THEN 8 WHEN 'superset' THEN 9 WHEN 'metabase' THEN 10 WHEN 'cube' THEN 11
         ELSE 99 END AS tool_order
     FROM read_json_auto('../results/*/*.jsonl', union_by_name = true, filename = true)
   ;;

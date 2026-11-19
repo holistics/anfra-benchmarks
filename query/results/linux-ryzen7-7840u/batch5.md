@@ -58,6 +58,10 @@ run once with psql, as a guide to how much of each time is Postgres's.
 
 The full notes are in [cases/semantic/metricflow.json](../../cases/semantic/metricflow.json).
 
+![Batch 5 in the report: each tool's median time per semantic case, Postgres](batch5.png)
+
+*The [report](../../report/) on batch 5: one panel per case, each on its own linear scale, a bar per tool for its median run. Compare tools within a panel, and only within a path: anfra CLI and MetricFlow write a CSV file; anfra HTTP and Cube answer over HTTP. MetricFlow appears only in the cases it runs.*
+
 ## What stands out
 
 ### Correctness: every tool that ran a case returned the right numbers

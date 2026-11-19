@@ -28,6 +28,38 @@ how to run a batch yourself.
 All ran on one machine, `linux-ryzen7-7840u` (AMD Ryzen 7 PRO 7840U, 27 GiB,
 Linux).
 
+Each batch's medians, per case, as the [report](report/) shows them (one panel
+per case, each on its own linear scale; compare tools within a panel, and only
+within a path):
+
+<details>
+<summary>Batch 2: Postgres, SQL cases</summary>
+
+![Batch 2: each tool's median time per case, Postgres, SQL cases](results/linux-ryzen7-7840u/batch2.png)
+
+</details>
+
+<details>
+<summary>Batch 3: ClickHouse, SQL cases</summary>
+
+![Batch 3: each tool's median time per case, ClickHouse, SQL cases](results/linux-ryzen7-7840u/batch3.png)
+
+</details>
+
+<details>
+<summary>Batch 5: Postgres, semantic cases</summary>
+
+![Batch 5: each tool's median time per semantic case, Postgres](results/linux-ryzen7-7840u/batch5.png)
+
+</details>
+
+<details>
+<summary>Batch 6: ClickHouse, semantic cases</summary>
+
+![Batch 6: each tool's median time per semantic case, ClickHouse](results/linux-ryzen7-7840u/batch6.png)
+
+</details>
+
 ## Viewing the results
 
 Three ways, from quickest to most detailed. None needs Docker or a warehouse.
