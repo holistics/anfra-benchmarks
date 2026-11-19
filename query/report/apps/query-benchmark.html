@@ -90,6 +90,8 @@
     .chart { height: 380px; }
     .case-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
                  gap: 20px 32px; min-height: 720px; align-content: start; }
+    .by-case-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
+    .one-chart { height: 460px; }
     .case-panel h3 { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px;
                      line-height: 16px; font-weight: 600; margin: 0 0 4px; }
     .compare-body { display: flex; flex-direction: column; gap: 16px; }
@@ -218,17 +220,31 @@
           <button class="btn" data-variant="secondary" type="button" data-path="http" aria-pressed="true">HTTP (frontend)</button>
         </div>
       </div>
+
+      <div class="field-group" data-anfra-block="statistic-picker" data-anfra-label="Statistic">
+        <span class="label">Statistic</span>
+        <div class="button-group" role="group" aria-label="Statistic">
+          <button class="btn" data-variant="secondary" type="button" data-statistic="median" aria-pressed="true">Median</button>
+          <button class="btn" data-variant="outline" type="button" data-statistic="mean">Mean</button>
+        </div>
+      </div>
     </div>
 
-    <section class="card" data-anfra-block="by-case" data-anfra-label="Median time by case">
-      <header>
-        <h2>Median time by case</h2>
-        <p class="caption">One panel per case, each on its own linear scale: compare the tools within a
-          panel, not the panels with each other. A bar is the tool's median run; hover for the slowest.
-          File tools (psql, usql, anfra CLI, each writing a CSV file) and HTTP tools (anfra HTTP,
-          Superset, Metabase) are not comparable with each other.</p>
+    <section class="card" data-anfra-block="by-case" data-anfra-label="Time by case">
+      <header class="by-case-header">
+        <div>
+          <h2 id="by-case-title">Median time by case</h2>
+          <p class="caption" id="by-case-caption"></p>
+        </div>
+        <div class="button-group" role="group" aria-label="View">
+          <button class="btn" data-variant="secondary" type="button" data-view="panels" aria-pressed="true">Panels</button>
+          <button class="btn" data-variant="outline" type="button" data-view="chart">One chart</button>
+        </div>
       </header>
-      <section><div id="by-case-grid" class="case-grid" data-anfra-query="byCase"></div></section>
+      <section>
+        <div id="by-case-grid" class="case-grid" data-anfra-query="byCase"></div>
+        <div id="by-case-chart" class="one-chart" data-anfra-query="byCase" hidden></div>
+      </section>
       <div id="by-case-status" class="status"></div>
     </section>
 
@@ -264,7 +280,7 @@
     <section class="card" data-anfra-block="table" data-anfra-label="Every tool, every case">
       <header>
         <h2>Every tool, every case</h2>
-        <p class="caption">Median ms, with the slowest run beside it. Both paths; compare within one.</p>
+        <p class="caption" id="table-caption">Median ms, with the slowest run beside it. Both paths; compare within one.</p>
       </header>
       <section class="table-wrap"><table class="results" id="table" data-anfra-query="table"></table></section>
       <div id="table-status" class="status"></div>
@@ -398,6 +414,12 @@
     const toolColor = (tool, theme) => theme.cat[(TOOLS[tool]?.color ?? 7) - 1];
 
     const ms = new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 });
+    // Which statistic of a cell's runs the charts and the table show: the median (the default; one
+    // slow run doesn't move it) or the mean.
+    let statistic = 'median';
+    const statOf = (row) => (statistic === 'mean' ? row.mean_ms : row.median_ms) ?? null;
+    const STATISTIC = { median: 'Median', mean: 'Mean' };
+    let byCaseView = 'panels';
     function formatMs (value) {
       if (value === null || value === undefined) return '–';
       const n = Number(value);
@@ -421,7 +443,7 @@
             case_order: runs.case_order, case_name: runs.case_name,
             tool_order: runs.tool_order, tool: runs.tool
           }
-          measures { median_ms: runs.median_ms, slowest_ms: runs.slowest_ms }
+          measures { median_ms: runs.median_ms, mean_ms: runs.mean_ms, slowest_ms: runs.slowest_ms }
           sorts { case_order asc, tool_order asc }
         }
       `,
@@ -434,10 +456,10 @@
       aql: `
         explore {
           dimensions {
-            path: runs.path, tool_order: runs.tool_order, tool: runs.tool,
+            run_group: runs.run_group, path: runs.path, tool_order: runs.tool_order, tool: runs.tool,
             case_order: runs.case_order, case_name: runs.case_name
           }
-          measures { median_ms: runs.median_ms }
+          measures { median_ms: runs.median_ms, mean_ms: runs.mean_ms }
           sorts { path asc, tool_order asc, case_order asc }
         }
       `,
@@ -453,7 +475,7 @@
             not_run: runs.not_run
           }
           measures {
-            median_ms: runs.median_ms, slowest_ms: runs.slowest_ms,
+            median_ms: runs.median_ms, mean_ms: runs.mean_ms, slowest_ms: runs.slowest_ms,
             ok_runs: runs.ok_runs, failed_runs: runs.failed_runs,
             records: runs.record_count
           }
@@ -592,10 +614,10 @@
           container.append(panel); // on the page before ECharts measures it
         }
         panels.push(panel);
-        const caseRows = tools.map((tool) => rows.find((r) => r.case_name === name && r.tool === tool && r.median_ms !== null) ?? { tool, median_ms: null });
+        const caseRows = tools.map((tool) => rows.find((r) => r.case_name === name && r.tool === tool && statOf(r) !== null) ?? { tool, median_ms: null, mean_ms: null });
         const chartEl = panel.lastElementChild;
         chartEl.style.height = `${caseRows.length * 24 + 16}px`;
-        const longest = Math.max(...caseRows.filter((r) => r.median_ms !== null).map((r) => Number(r.median_ms)));
+        const longest = Math.max(...caseRows.filter((r) => statOf(r) !== null).map((r) => Number(statOf(r))));
         let chart = caseCharts.get(name);
         if (!chart) { chart = echarts.init(chartEl); caseCharts.set(name, chart); }
         chart.resize();
@@ -607,8 +629,8 @@
             trigger: 'item',
             formatter: (p) => {
               const r = caseRows[p.dataIndex];
-              return r.median_ms === null ? `<b>${name}</b>, ${toolLabel(r.tool)}: not run`
-                : `<b>${name}</b>, ${toolLabel(r.tool)}<br>median ${formatMs(r.median_ms)} ms<br>slowest ${formatMs(r.slowest_ms)} ms`;
+              return statOf(r) === null ? `<b>${name}</b>, ${toolLabel(r.tool)}: not run`
+                : `<b>${name}</b>, ${toolLabel(r.tool)}<br>median ${formatMs(r.median_ms)} ms<br>mean ${formatMs(r.mean_ms)} ms<br>slowest ${formatMs(r.slowest_ms)} ms`;
             },
           },
           // Room past the longest bar for its label.
@@ -618,12 +640,12 @@
                    axisLine: { lineStyle: { color: theme.grid } } },
           series: [{
             type: 'bar', id: 'median', barWidth: '64%',
-            data: caseRows.map((r) => (r.median_ms === null
+            data: caseRows.map((r) => (statOf(r) === null
               // No bar; a zero-length one carries the "not run" label.
               ? { value: 0, itemStyle: { color: 'transparent' }, label: { formatter: 'not run', fontStyle: 'italic' } }
-              : { value: Number(r.median_ms), itemStyle: { color: toolColor(r.tool, theme), borderRadius: [0, 3, 3, 0] } })),
+              : { value: Number(statOf(r)), itemStyle: { color: toolColor(r.tool, theme), borderRadius: [0, 3, 3, 0] } })),
             label: { show: true, position: 'right', color: theme.text, fontSize: 11,
-                     formatter: (p) => `${formatMs(caseRows[p.dataIndex].median_ms)} ms` },
+                     formatter: (p) => `${formatMs(statOf(caseRows[p.dataIndex]))} ms` },
           }],
         }, { replaceMerge: ['series'] });
       }
@@ -652,8 +674,11 @@
 
     function currentPicks (available) {
       const names = available.map((t) => t.tool);
-      // Another group has other tools: start again from its defaults.
-      const group = runGroup.condition?.values?.[0] ?? 'sql';
+      // Another group has other tools: start again from its defaults. The group is the results' own
+      // (each row carries it), so the picks always match the tools on screen, whatever the timing
+      // of a switch between groups, warehouses and batches.
+      const group = compare.result?.rows?.[0]?.run_group;
+      if (group === undefined) return [];
       if (picksGroup !== group) { picks = null; picksGroup = group; }
       if (picks === null && available.length > 0) {
         // anfra HTTP as the baseline, then whichever of the group's default tools this batch has.
@@ -731,8 +756,8 @@
       const medians = new Map(); // `${tool}:${case}` → median ms
       const cases = [];
       for (const row of compare.result.rows) {
-        if (row.median_ms === null) continue;
-        medians.set(`${row.tool}:${row.case_name}`, Number(row.median_ms));
+        if (statOf(row) === null) continue;
+        medians.set(`${row.tool}:${row.case_name}`, Number(statOf(row)));
         if (!cases.some((c) => c.name === row.case_name)) cases.push({ name: row.case_name, order: Number(row.case_order) });
       }
       // Cases the baseline ran, smallest result at the top.
@@ -794,6 +819,58 @@
       }, { replaceMerge: ['series'] });
     }
 
+    // One column chart of every case: cases along the axis, a column per tool, on one linear scale.
+    // The largest cases set the scale, so small ones read as near zero: the panels compare those.
+    const oneChart = echarts.init(document.getElementById('by-case-chart'));
+    function renderOneChart (theme) {
+      if (!byCase.result || byCaseView !== 'chart') return;
+      const rows = byCase.result.rows;
+      const cases = caseList(rows);
+      const tools = [...new Map(rows.map((r) => [r.tool, Number(r.tool_order)])).entries()]
+        .sort((a, b) => a[1] - b[1]).map(([tool]) => tool);
+      oneChart.resize();
+      oneChart.setOption({
+        animation: false,
+        textStyle: { color: theme.text, fontFamily: 'Inter Variable, Inter, system-ui, sans-serif' },
+        legend: { top: 0, data: tools.map(toolLabel), textStyle: { color: theme.text } },
+        grid: { left: 8, right: 16, top: 40, bottom: 8, containLabel: true },
+        tooltip: {
+          trigger: 'axis', axisPointer: { type: 'shadow' },
+          formatter: (items) => {
+            const name = cases[items[0].dataIndex];
+            const lines = tools.map((tool) => {
+              const row = rows.find((r) => r.case_name === name && r.tool === tool);
+              return row && statOf(row) !== null ? `${toolLabel(tool)}: <b>${formatMs(statOf(row))} ms</b>` : `${toolLabel(tool)}: not run`;
+            });
+            return [`<b>${name}</b> (${STATISTIC[statistic].toLowerCase()})`, ...lines].join('<br>');
+          },
+        },
+        xAxis: { type: 'category', data: cases, axisLabel: { color: theme.text, interval: 0, rotate: cases.length > 9 ? 30 : 0 },
+                 axisLine: { lineStyle: { color: theme.grid } } },
+        yAxis: { type: 'value', name: 'ms', nameTextStyle: { color: theme.text },
+                 axisLabel: { color: theme.text }, splitLine: { lineStyle: { color: theme.grid } } },
+        series: tools.map((tool) => ({
+          type: 'bar', name: toolLabel(tool), id: `col-${tool}`,
+          itemStyle: { color: toolColor(tool, theme), borderRadius: [3, 3, 0, 0] },
+          data: cases.map((name) => {
+            const row = rows.find((r) => r.case_name === name && r.tool === tool);
+            return row && statOf(row) !== null ? Number(statOf(row)) : null;
+          }),
+        })),
+      // Replaced, not merged: merging keeps a known tool's old column position when the tools
+      // change (SQL to semantic), so the columns would no longer follow the legend's order.
+      }, { notMerge: true });
+    }
+
+    function renderStatisticText () {
+      const label = STATISTIC[statistic];
+      document.getElementById('by-case-title').textContent = `${label} time by case`;
+      document.getElementById('by-case-caption').textContent = byCaseView === 'panels'
+        ? `One panel per case, each on its own linear scale: compare the tools within a panel, not the panels with each other. A bar is the tool's ${label.toLowerCase()} run time; hover for the median, mean and slowest. File tools (CLIs, each writing a CSV file) and HTTP tools are not comparable with each other.`
+        : `Every case on one linear scale, a column per tool: the largest cases set the scale, so compare small cases in the panels. Hover a case for each tool's ${label.toLowerCase()}. File tools (CLIs, each writing a CSV file) and HTTP tools are not comparable with each other.`;
+      document.getElementById('table-caption').textContent = `${label} ms, with the slowest run beside it. Both paths; compare within one.`;
+    }
+
     function renderTable () {
       const el = document.getElementById('table');
       if (!table.result) return;
@@ -832,8 +909,8 @@
           } else if (row.not_run) {
             td.append(Object.assign(document.createElement('span'), { className: 'not-run', textContent: 'not run', title: row.not_run }));
           } else {
-            if (row.median_ms !== null) {
-              td.append(document.createTextNode(formatMs(row.median_ms)));
+            if (statOf(row) !== null) {
+              td.append(document.createTextNode(formatMs(statOf(row))));
               td.append(Object.assign(document.createElement('span'), { className: 'slowest', textContent: `(${formatMs(row.slowest_ms)})` }));
             } else {
               td.append(document.createTextNode('–'));
@@ -855,7 +932,9 @@
       renderStatus(table, 'table-status', 'No runs for this machine, batch and warehouse.');
       for (const query of [byCase, compare, table]) logFirstResult(query);
       const theme = chartTheme();
+      renderStatisticText();
       renderByCase(theme);
+      renderOneChart(theme);
       renderCompare(theme);
       renderTable();
       renderRuns();
@@ -976,7 +1055,7 @@
 
     app.subscribe(render);
     darkQuery.addEventListener('change', () => { applyTheme(); render(); });
-    window.addEventListener('resize', () => { for (const chart of caseCharts.values()) chart.resize(); compareChart.resize(); });
+    window.addEventListener('resize', () => { for (const chart of caseCharts.values()) chart.resize(); compareChart.resize(); oneChart.resize(); });
 
     // Runs: more pages, and the result switch (all, ok, failed).
     document.getElementById('runs-more').addEventListener('click', async (event) => {
@@ -1017,6 +1096,31 @@
         app.execute();
       });
     }
+
+    // A segmented control: the pressed button is the secondary variant.
+    function pressOnly (buttons, button) {
+      buttons.forEach((other) => {
+        const on = other === button;
+        other.dataset.variant = on ? 'secondary' : 'outline';
+        other.setAttribute('aria-pressed', String(on));
+      });
+    }
+    // Statistic: median or mean, for every chart and the table. Nothing to query again.
+    const statisticButtons = [...document.querySelectorAll('[data-statistic]')];
+    statisticButtons.forEach((button) => button.addEventListener('click', () => {
+      statistic = button.dataset.statistic;
+      pressOnly(statisticButtons, button);
+      render();
+    }));
+    // View of the time by case: a panel per case, or one chart.
+    const viewButtons = [...document.querySelectorAll('[data-view]')];
+    viewButtons.forEach((button) => button.addEventListener('click', () => {
+      byCaseView = button.dataset.view;
+      pressOnly(viewButtons, button);
+      document.getElementById('by-case-grid').hidden = byCaseView !== 'panels';
+      document.getElementById('by-case-chart').hidden = byCaseView !== 'chart';
+      render();
+    }));
 
     // Path: two toggles over a manual filter, both on by default. At least one stays on.
     const pathButtons = [...document.querySelectorAll('[data-path]')];

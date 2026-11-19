@@ -75,6 +75,12 @@ Model runs {
     description: 'The median time of the ok runs.'
     definition: @aql median(runs.ms) | where(runs.ok == true) ;;
   }
+  measure mean_ms {
+    label: 'Mean (ms)'
+    type: 'number'
+    description: 'The mean time of the ok runs. One slow run moves it more than the median.'
+    definition: @aql avg(runs.ms) | where(runs.ok == true) ;;
+  }
   measure slowest_ms {
     label: 'Slowest (ms)'
     type: 'number'
